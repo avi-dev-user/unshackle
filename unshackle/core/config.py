@@ -72,7 +72,7 @@ class Config:
         self.proxy_providers: dict = kwargs.get("proxy_providers") or {}
         self.serve: dict = kwargs.get("serve") or {}
         self.services: dict = kwargs.get("services") or {}
-        self.set_terminal_bg: bool = kwargs.get("set_terminal_bg", True)
+        self.set_terminal_bg: bool = kwargs.get("set_terminal_bg", False)
         self.tag: str = kwargs.get("tag") or ""
         self.tmdb_api_key: str = kwargs.get("tmdb_api_key") or ""
 
