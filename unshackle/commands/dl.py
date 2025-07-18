@@ -57,7 +57,8 @@ from unshackle.core.tracks import Audio, Subtitle, Tracks, Video
 from unshackle.core.tracks.attachment import Attachment
 from unshackle.core.utilities import get_system_fonts, is_close_match, time_elapsed_since
 from unshackle.core.utils import tags
-from unshackle.core.utils.click_types import LANGUAGE_RANGE, QUALITY_LIST, SEASON_RANGE, ContextData, MultipleChoice
+from unshackle.core.utils.click_types import (LANGUAGE_RANGE, QUALITY_LIST, SEASON_RANGE, ContextData, MultipleChoice,
+                                              VideoCodecChoice)
 from unshackle.core.utils.collections import merge_dict
 from unshackle.core.utils.subprocess import ffprobe
 from unshackle.core.vaults import Vaults
@@ -82,7 +83,7 @@ class dl:
     @click.option(
         "-v",
         "--vcodec",
-        type=click.Choice(Video.Codec, case_sensitive=False),
+        type=VideoCodecChoice(Video.Codec),
         default=None,
         help="Video Codec to download, defaults to any codec.",
     )
@@ -650,27 +651,41 @@ class dl:
                                 sys.exit(1)
 
                 if video_only or audio_only or subs_only or chapters_only or no_subs or no_audio or no_chapters:
-                    kept_tracks = []
-                    if no_subs:
-                        kept_tracks.extend(title.tracks.videos)
-                        kept_tracks.extend(title.tracks.audio)
-                        kept_tracks.extend(title.tracks.chapters)
-                    if no_audio:
-                        kept_tracks.extend(title.tracks.videos)
-                        kept_tracks.extend(title.tracks.subtitles)
-                        kept_tracks.extend(title.tracks.chapters)
-                    if no_chapters:
-                        kept_tracks.extend(title.tracks.audio)
-                        kept_tracks.extend(title.tracks.subtitles)
-                        kept_tracks.extend(title.tracks.videos)
+                    # Determine which track types to keep based on the flags
+                    keep_videos = True
+                    keep_audio = True
+                    keep_subtitles = True
+                    keep_chapters = True
+
+                    # Handle exclusive flags (only keep one type)
                     if video_only:
+                        keep_audio = keep_subtitles = keep_chapters = False
+                    elif audio_only:
+                        keep_videos = keep_subtitles = keep_chapters = False
+                    elif subs_only:
+                        keep_videos = keep_audio = keep_chapters = False
+                    elif chapters_only:
+                        keep_videos = keep_audio = keep_subtitles = False
+
+                    # Handle exclusion flags (remove specific types)
+                    if no_subs:
+                        keep_subtitles = False
+                    if no_audio:
+                        keep_audio = False
+                    if no_chapters:
+                        keep_chapters = False
+
+                    # Build the kept_tracks list without duplicates
+                    kept_tracks = []
+                    if keep_videos:
                         kept_tracks.extend(title.tracks.videos)
-                    if audio_only:
+                    if keep_audio:
                         kept_tracks.extend(title.tracks.audio)
-                    if subs_only:
+                    if keep_subtitles:
                         kept_tracks.extend(title.tracks.subtitles)
-                    if chapters_only:
+                    if keep_chapters:
                         kept_tracks.extend(title.tracks.chapters)
+
                     title.tracks = Tracks(kept_tracks)
 
             selected_tracks, tracks_progress_callables = title.tracks.tree(add_progress=True)
