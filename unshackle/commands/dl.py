@@ -772,6 +772,7 @@ class dl:
                 while (
                     not title.tracks.subtitles
                     and not no_subs
+                    and not video_only
                     and len(title.tracks.videos) > video_track_n
                     and any(
                         x.get("codec_name", "").startswith("eia_")
