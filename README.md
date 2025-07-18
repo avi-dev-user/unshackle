@@ -43,8 +43,18 @@ uvx unshackle --help   # or just `unshackle` once PATH updated
 
 > [!NOTE]
 > After installation, you may need to add the installation path to your PATH environment variable if prompted.
->
+
 > **Recommended:** Use `uv run unshackle` instead of direct command execution to ensure proper virtual environment activation.
+
+## Planned Features
+
+- 🌈 **HDR10+DV Hybrid Support** - Allow support for hybrid HDR10+ and Dolby Vision.
+- 🖥️ **Web UI Access & Control** - Manage and control unshackle from a modern web interface.
+- 🔄 **Sonarr/Radarr Interactivity** - Direct integration for automated personal downloads.
+- ⚙️ **Better ISM Support** - Improve on ISM support for multiple services
+- 🐳 **Docker Image** - Prepared Docker Image with everything ready to go.
+- 🔉 **ATMOS** - Better Atmos Support/Selection
+- 🎵 **Music** - Cleanup Audio Tagging using the [tags.py](unshackle/core/utils/tags.py) for artist/track name etc.
 
 ### Basic Usage
 
@@ -94,8 +104,3 @@ Please refrain from spam or asking for questions that infringe upon a Service's 
 
 This software is licensed under the terms of [GNU General Public License, Version 3.0](LICENSE).  
 You can find a copy of the license in the LICENSE file in the root folder.
-
----
-
-[Export Cookies]: https://addons.mozilla.org/addon/export-cookies-txt
-[Open Cookies.txt]: https://chrome.google.com/webstore/detail/gdocmgbfkjnnpapoeobnolbbkoibbcif
