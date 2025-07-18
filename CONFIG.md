@@ -114,6 +114,15 @@ Please be aware that this information is sensitive and to keep it safe. Do not s
 - `browser` - The Browser to impersonate as. A list of available Browsers and Versions are listed here:
   <https://github.com/yifeikong/curl_cffi#sessions>
 
+  Default: `"chrome124"`
+
+For example,
+
+```yaml
+curl_impersonate:
+  browser: "chrome120"
+```
+
 ## directories (dict)
 
 Override the default directories used across unshackle.  
@@ -185,9 +194,10 @@ downloaders.
 
 Options:
 
-- `requests` (default) - https://github.com/psf/requests
-- `aria2c` - https://github.com/aria2/aria2
-- `curl_impersonate` - https://github.com/yifeikong/curl-impersonate (via https://github.com/yifeikong/curl_cffi)
+- `requests` (default) - <https://github.com/psf/requests>
+- `aria2c` - <https://github.com/aria2/aria2>
+- `curl_impersonate` - <https://github.com/yifeikong/curl-impersonate> (via <https://github.com/yifeikong/curl_cffi>)
+- `n_m3u8dl_re` - <https://github.com/nilaoda/N_m3u8DL-RE>
 
 Note that aria2c can reach the highest speeds as it utilizes threading and more connections than the other downloaders. However, aria2c can also be one of the more unstable downloaders. It will work one day, then not another day. It also does not support HTTP(S) proxies while the other downloaders do.
 
@@ -202,6 +212,30 @@ downloader:
 ```
 
 The `default` entry is optional. If omitted, `requests` will be used for services not listed.
+
+## filenames (dict)
+
+Override the default filenames used across unshackle.  
+The filenames use various variables that are replaced during runtime.
+
+The following filenames are available and may be overridden:
+
+- `log` - Log filenames. Uses `{name}` and `{time}` variables.
+- `config` - Service configuration filenames.
+- `root_config` - Root configuration filename.
+- `chapters` - Chapter export filenames. Uses `{title}` and `{random}` variables.
+- `subtitle` - Subtitle export filenames. Uses `{id}` and `{language}` variables.
+
+For example,
+
+```yaml
+filenames:
+  log: "unshackle_{name}_{time}.log"
+  config: "config.yaml"
+  root_config: "unshackle.yaml"
+  chapters: "Chapters_{title}_{random}.txt"
+  subtitle: "Subtitle_{id}_{language}.srt"
+```
 
 ## headers (dict)
 
@@ -302,6 +336,51 @@ together.
 - `set_title`
   Set the container title to `Show SXXEXX Episode Name` or `Movie (Year)`. Default: `true`
 
+## n_m3u8dl_re (dict)
+
+Configuration for N_m3u8DL-RE downloader. This downloader is particularly useful for HLS streams.
+
+- `thread_count`
+  Number of threads to use for downloading. Default: Uses the same value as max_workers from the command.
+- `ad_keyword`
+  Keyword to identify and potentially skip advertisement segments. Default: `None`
+- `use_proxy`
+  Whether to use proxy when downloading. Default: `true`
+
+For example,
+
+```yaml
+n_m3u8dl_re:
+  thread_count: 16
+  ad_keyword: "advertisement"
+  use_proxy: true
+```
+
+## nordvpn (dict)
+
+**Legacy configuration. Use `proxy_providers.nordvpn` instead.**
+
+Set your NordVPN Service credentials with `username` and `password` keys to automate the use of NordVPN as a Proxy
+system where required.
+
+You can also specify specific servers to use per-region with the `servers` key.  
+Sometimes a specific server works best for a service than others, so hard-coding one for a day or two helps.
+
+For example,
+
+```yaml
+nordvpn:
+  username: zxqsR7C5CyGwmGb6KSvk8qsZ # example of the login format
+  password: wXVHmht22hhRKUEQ32PQVjCZ
+  servers:
+    - us: 12 # force US server #12 for US proxies
+```
+
+The username and password should NOT be your normal NordVPN Account Credentials.  
+They should be the `Service credentials` which can be found on your Nord Account Dashboard.
+
+Note that `gb` is used instead of `uk` to be more consistent across regional systems.
+
 ## proxy_providers (dict)
 
 Enable external proxy provider services. These proxies will be used automatically where needed as defined by the
@@ -352,6 +431,19 @@ Once set, you can also specifically opt in to use a NordVPN proxy by specifying 
 You can even set a specific server number this way, e.g., `--proxy=gb2366`.
 
 Note that `gb` is used instead of `uk` to be more consistent across regional systems.
+
+### hola (dict)
+
+Enable Hola VPN proxy service. This is a simple provider that doesn't require configuration.
+
+For example,
+
+```yaml
+proxy_providers:
+  hola: {}
+```
+
+Note: Hola VPN is automatically enabled when proxy_providers is configured, no additional setup is required.
 
 ## remote_cdm (list\[dict])
 
@@ -423,6 +515,16 @@ NOW:
     # ... more sensitive data
 ```
 
+## set_terminal_bg (bool)
+
+Controls whether unshackle should set the terminal background color. Default: `false`
+
+For example,
+
+```yaml
+set_terminal_bg: true
+```
+
 ## tag (str)
 
 Group or Username to postfix to the end of all download filenames following a dash.  
@@ -435,15 +537,15 @@ IMDB and TVDB identifiers. Leave empty to disable automatic lookups.
 
 To obtain a TMDB API key:
 
-1. Create an account at https://www.themoviedb.org/
-2. Go to https://www.themoviedb.org/settings/api to register for API access
+1. Create an account at <https://www.themoviedb.org/>
+2. Go to <https://www.themoviedb.org/settings/api> to register for API access
 3. Fill out the API application form with your project details
 4. Once approved, you'll receive your API key
 
 For example,
 
 ```yaml
-tmdb_api_key: cf66bf1895dkca5361ada3bebb84eb9a
+tmdb_api_key: cf66bf18956kca5311ada3bebb84eb9a # Not a real key
 ```
 
 **Note**: Keep your API key secure and do not share it publicly. This key is used by the core/utils/tags.py module to fetch metadata from TMDB for proper file tagging.
