@@ -6,6 +6,42 @@ from click.shell_completion import CompletionItem
 from pywidevine.cdm import Cdm as WidevineCdm
 
 
+class VideoCodecChoice(click.Choice):
+    """
+    A custom Choice type for video codecs that accepts both enum names and values.
+
+    Accepts both:
+    - Enum names: avc, hevc, vc1, vp8, vp9, av1
+    - Enum values: H.264, H.265, VC-1, VP8, VP9, AV1
+    """
+
+    def __init__(self, codec_enum):
+        self.codec_enum = codec_enum
+        # Build choices from both enum names and values
+        choices = []
+        for codec in codec_enum:
+            choices.append(codec.name.lower())  # e.g., "avc", "hevc"
+            choices.append(codec.value)  # e.g., "H.264", "H.265"
+        super().__init__(choices, case_sensitive=False)
+
+    def convert(self, value: Any, param: Optional[click.Parameter] = None, ctx: Optional[click.Context] = None):
+        if not value:
+            return None
+
+        # First try to convert using the parent class
+        converted_value = super().convert(value, param, ctx)
+
+        # Now map the converted value back to the enum
+        for codec in self.codec_enum:
+            if converted_value.lower() == codec.name.lower():
+                return codec
+            if converted_value == codec.value:
+                return codec
+
+        # This shouldn't happen if the parent conversion worked
+        self.fail(f"'{value}' is not a valid video codec", param, ctx)
+
+
 class ContextData:
     def __init__(self, config: dict, cdm: WidevineCdm, proxy_providers: list, profile: Optional[str] = None):
         self.config = config
@@ -167,3 +203,5 @@ class MultipleChoice(click.Choice):
 SEASON_RANGE = SeasonRange()
 LANGUAGE_RANGE = LanguageRange()
 QUALITY_LIST = QualityList()
+
+# VIDEO_CODEC_CHOICE will be created dynamically when imported
