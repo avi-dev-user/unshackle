@@ -46,16 +46,6 @@ uvx unshackle --help   # or just `unshackle` once PATH updated
 
 > **Recommended:** Use `uv run unshackle` instead of direct command execution to ensure proper virtual environment activation.
 
-## Planned Features
-
-- 🌈 **HDR10+DV Hybrid Support** - Allow support for hybrid HDR10+ and Dolby Vision.
-- 🖥️ **Web UI Access & Control** - Manage and control unshackle from a modern web interface.
-- 🔄 **Sonarr/Radarr Interactivity** - Direct integration for automated personal downloads.
-- ⚙️ **Better ISM Support** - Improve on ISM support for multiple services
-- 🐳 **Docker Image** - Prepared Docker Image with everything ready to go.
-- 🔉 **ATMOS** - Better Atmos Support/Selection
-- 🎵 **Music** - Cleanup Audio Tagging using the [tags.py](unshackle/core/utils/tags.py) for artist/track name etc.
-
 ### Basic Usage
 
 ```shell
@@ -71,6 +61,16 @@ uv run automaterr env check
 # Download content (requires configured services)
 uv run unshackle dl SERVICE_NAME CONTENT_ID
 ```
+
+## Planned Features
+
+- 🌈 **HDR10+DV Hybrid Support** - Allow support for hybrid HDR10+ and Dolby Vision.
+- 🖥️ **Web UI Access & Control** - Manage and control unshackle from a modern web interface.
+- 🔄 **Sonarr/Radarr Interactivity** - Direct integration for automated personal downloads.
+- ⚙️ **Better ISM Support** - Improve on ISM support for multiple services
+- 🐳 **Docker Image** - Prepared Docker Image with everything ready to go.
+- 🔉 **ATMOS** - Better Atmos Support/Selection
+- 🎵 **Music** - Cleanup Audio Tagging using the [tags.py](unshackle/core/utils/tags.py) for artist/track name etc.
 
 ## Documentation
 
