@@ -58,7 +58,7 @@ from unshackle.core.tracks.attachment import Attachment
 from unshackle.core.utilities import get_system_fonts, is_close_match, time_elapsed_since
 from unshackle.core.utils import tags
 from unshackle.core.utils.click_types import (LANGUAGE_RANGE, QUALITY_LIST, SEASON_RANGE, ContextData, MultipleChoice,
-                                              VideoCodecChoice)
+                                              SubtitleCodecChoice, VideoCodecChoice)
 from unshackle.core.utils.collections import merge_dict
 from unshackle.core.utils.subprocess import ffprobe
 from unshackle.core.vaults import Vaults
@@ -179,7 +179,7 @@ class dl:
     )
     @click.option(
         "--sub-format",
-        type=click.Choice(Subtitle.Codec, case_sensitive=False),
+        type=SubtitleCodecChoice(Subtitle.Codec),
         default="srt",
         help="Set Output Subtitle Format, only converting if necessary.",
     )

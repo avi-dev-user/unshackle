@@ -42,6 +42,91 @@ class VideoCodecChoice(click.Choice):
         self.fail(f"'{value}' is not a valid video codec", param, ctx)
 
 
+class SubtitleCodecChoice(click.Choice):
+    """
+    A custom Choice type for subtitle codecs that accepts both enum names, values, and common aliases.
+
+    Accepts:
+    - Enum names: subrip, substationalpha, substationalphav4, timedtextmarkuplang, webvtt, ftml, fvtt
+    - Enum values: SRT, SSA, ASS, TTML, VTT, STPP, WVTT
+    - Common aliases: srt (for SubRip)
+    """
+
+    def __init__(self, codec_enum):
+        self.codec_enum = codec_enum
+        # Build choices from enum names, values, and common aliases
+        choices = []
+        aliases = {}
+
+        for codec in codec_enum:
+            choices.append(codec.name.lower())  # e.g., "subrip", "webvtt"
+
+            # Only add the value if it's different from common aliases
+            value_lower = codec.value.lower()
+
+            # Add common aliases and track them
+            if codec.name == "SubRip":
+                if "srt" not in choices:
+                    choices.append("srt")
+                aliases["srt"] = codec
+            elif codec.name == "WebVTT":
+                if "vtt" not in choices:
+                    choices.append("vtt")
+                aliases["vtt"] = codec
+                # Also add the enum value if different
+                if value_lower != "vtt" and value_lower not in choices:
+                    choices.append(value_lower)
+            elif codec.name == "SubStationAlpha":
+                if "ssa" not in choices:
+                    choices.append("ssa")
+                aliases["ssa"] = codec
+                # Also add the enum value if different
+                if value_lower != "ssa" and value_lower not in choices:
+                    choices.append(value_lower)
+            elif codec.name == "SubStationAlphav4":
+                if "ass" not in choices:
+                    choices.append("ass")
+                aliases["ass"] = codec
+                # Also add the enum value if different
+                if value_lower != "ass" and value_lower not in choices:
+                    choices.append(value_lower)
+            elif codec.name == "TimedTextMarkupLang":
+                if "ttml" not in choices:
+                    choices.append("ttml")
+                aliases["ttml"] = codec
+                # Also add the enum value if different
+                if value_lower != "ttml" and value_lower not in choices:
+                    choices.append(value_lower)
+            else:
+                # For other codecs, just add the enum value
+                if value_lower not in choices:
+                    choices.append(value_lower)
+
+        self.aliases = aliases
+        super().__init__(choices, case_sensitive=False)
+
+    def convert(self, value: Any, param: Optional[click.Parameter] = None, ctx: Optional[click.Context] = None):
+        if not value:
+            return None
+
+        # First try to convert using the parent class
+        converted_value = super().convert(value, param, ctx)
+
+        # Check aliases first
+        if converted_value.lower() in self.aliases:
+            return self.aliases[converted_value.lower()]
+
+        # Now map the converted value back to the enum
+        for codec in self.codec_enum:
+            if converted_value.lower() == codec.name.lower():
+                return codec
+            if converted_value.lower() == codec.value.lower():
+                return codec
+
+        # This shouldn't happen if the parent conversion worked
+        self.fail(f"'{value}' is not a valid subtitle codec", param, ctx)
+
+
 class ContextData:
     def __init__(self, config: dict, cdm: WidevineCdm, proxy_providers: list, profile: Optional[str] = None):
         self.config = config
