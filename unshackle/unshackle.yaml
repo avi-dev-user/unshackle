@@ -25,7 +25,9 @@ directories:
   prds: PRDs
   # Additional directories that can be configured:
   # commands: Commands
-  # services: Services
+  services:
+    - /path/to/services
+    - /other/path/to/services
   # vaults: Vaults
   # fonts: Fonts
 
