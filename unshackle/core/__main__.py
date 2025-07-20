@@ -1,6 +1,5 @@
 import atexit
 import logging
-from datetime import datetime
 from pathlib import Path
 
 import click
@@ -69,7 +68,7 @@ def main(version: bool, debug: bool, log_path: Path) -> None:
                     r" ▀▀▀ ▀▀ █▪ ▀▀▀▀ ▀▀▀ · ▀  ▀ ·▀▀▀ ·▀  ▀.▀▀▀  ▀▀▀ ",
                     style="ascii.art",
                 ),
-                f"v[repr.number]{__version__}[/]",
+                "v 3.3.3 Copyright © 2019-2025 rlaphoenix" + f"\nv [repr.number]{__version__}[/] - unshackle",
             ),
             (1, 11, 1, 10),
             expand=True,
