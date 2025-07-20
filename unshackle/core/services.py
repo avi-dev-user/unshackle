@@ -6,7 +6,14 @@ from unshackle.core.config import config
 from unshackle.core.service import Service
 from unshackle.core.utilities import import_module_by_path
 
-_SERVICES = sorted((path for path in config.directories.services.glob("*/__init__.py")), key=lambda x: x.parent.stem)
+_service_dirs = config.directories.services
+if not isinstance(_service_dirs, list):
+    _service_dirs = [_service_dirs]
+
+_SERVICES = sorted(
+    (path for service_dir in _service_dirs for path in service_dir.glob("*/__init__.py")),
+    key=lambda x: x.parent.stem,
+)
 
 _MODULES = {path.parent.stem: getattr(import_module_by_path(path), path.parent.stem) for path in _SERVICES}
 

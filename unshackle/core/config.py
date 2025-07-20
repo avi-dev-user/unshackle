@@ -14,7 +14,7 @@ class Config:
         core_dir = Path(__file__).resolve().parent
         namespace_dir = core_dir.parent
         commands = namespace_dir / "commands"
-        services = namespace_dir / "services"
+        services = [namespace_dir / "services"]
         vaults = namespace_dir / "vaults"
         fonts = namespace_dir / "fonts"
         user_configs = core_dir.parent
@@ -51,7 +51,10 @@ class Config:
             if name.lower() in ("app_dirs", "core_dir", "namespace_dir", "user_configs", "data"):
                 # these must not be modified by the user
                 continue
-            setattr(self.directories, name, Path(path).expanduser())
+            if name == "services" and isinstance(path, list):
+                setattr(self.directories, name, [Path(p).expanduser() for p in path])
+            else:
+                setattr(self.directories, name, Path(path).expanduser())
 
         downloader_cfg = kwargs.get("downloader") or "requests"
         if isinstance(downloader_cfg, dict):
