@@ -780,12 +780,6 @@ wheels = [
 ]
 
 [[package]]
-name = "mediainfo"
-version = "0.0.9"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/f6/67/0c8fcb5412f99f6868766816665369547a790c77de555463c0becaa25b71/MediaInfo-0.0.9.tar.gz", hash = "sha256:090a3fa1cc3e1df012d1469e412258242bb1fff11bd2feeb1e32a2190e4561c7", size = 3896, upload-time = "2020-11-08T14:24:11.023Z" }
-
-[[package]]
 name = "more-itertools"
 version = "10.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1500,7 +1494,6 @@ dependencies = [
     { name = "jsonpickle" },
     { name = "langcodes" },
     { name = "lxml" },
-    { name = "mediainfo" },
     { name = "pproxy" },
     { name = "protobuf" },
     { name = "pycaption" },
@@ -1549,7 +1542,6 @@ requires-dist = [
     { name = "jsonpickle", specifier = ">=3.0.4,<4" },
     { name = "langcodes", extras = ["data"], specifier = ">=3.4.0,<4" },
     { name = "lxml", specifier = ">=5.2.1,<6" },
-    { name = "mediainfo", specifier = ">=0.0.9" },
     { name = "pproxy", specifier = ">=2.7.9,<3" },
     { name = "protobuf", specifier = ">=4.25.3,<5" },
     { name = "pycaption", specifier = ">=2.2.6,<3" },

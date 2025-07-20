@@ -37,7 +37,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install shaka packager
-RUN wget https://github.com/shaka-project/shaka-packager/releases/download/v3.4.1/packager-linux-x64 \
+RUN wget https://github.com/shaka-project/shaka-packager/releases/download/v2.6.1/packager-linux-x64 \
     && chmod +x packager-linux-x64 \
     && mv packager-linux-x64 /usr/local/bin/packager
 

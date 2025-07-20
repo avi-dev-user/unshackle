@@ -57,7 +57,10 @@ docker run --rm \
   -v "$(pwd)/downloads:/downloads" \
   -v "$(pwd)/unshackle/cookies:/app/unshackle/cookies" \
   -v "$(pwd)/unshackle/services:/app/unshackle/services" \
-  -v "$(pwd)/unshackle.yaml:/app/unshackle.yaml" \
+  -v "$(pwd)/unshackle/WVDs:/app/unshackle/WVDs" \
+  -v "$(pwd)/unshackle/PRDs:/app/unshackle/PRDs" \
+  -v "$(pwd)/temp:/app/temp" \
+  -v "$(pwd)/unshackle/unshackle.yaml:/app/unshackle.yaml" \
   ghcr.io/unshackle-dl/unshackle:latest dl SERVICE_NAME CONTENT_ID
 
 # Run interactively for configuration
