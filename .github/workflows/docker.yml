@@ -2,38 +2,39 @@ name: Build and Publish Docker Image
 
 on:
   push:
-    branches:
-      - main
-      - master
-    paths:
+    branches: [main, master]
+    paths: # run only when this file changed at all
       - "unshackle/core/__init__.py"
-      - "Dockerfile"
-      - "pyproject.toml"
-      - "uv.lock"
-      - ".github/workflows/docker.yml"
-    tags:
-      - "v*"
-  pull_request:
-    branches:
-      - main
-      - master
-    paths:
-      - "unshackle/core/__init__.py"
-      - "Dockerfile"
-      - "pyproject.toml"
-      - "uv.lock"
-      - ".github/workflows/docker.yml"
-
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  pull_request: {} # optional – delete if you don’t build on PRs
+  workflow_dispatch: {} # manual override
 
 jobs:
-  build-and-push:
+  detect-version-change:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+    outputs:
+      changed: ${{ steps.vdiff.outputs.changed }}
+      version: ${{ steps.vdiff.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 } # we need the previous commit :contentReference[oaicite:1]{index=1}
+
+      - name: Extract & compare version
+        id: vdiff
+        shell: bash
+        run: |
+          current=$(grep -oP '__version__ = "\K[^"]+' unshackle/core/__init__.py)
+          prev=$(git show HEAD^:unshackle/core/__init__.py \
+                 | grep -oP '__version__ = "\K[^"]+' || echo '')
+          echo "version=$current"   >>"$GITHUB_OUTPUT"
+          echo "changed=$([ "$current" != "$prev" ] && echo true || echo false)" >>"$GITHUB_OUTPUT"
+          echo "Current=$current  Previous=$prev"
+
+  build-and-push:
+    needs: detect-version-change
+    if: needs.detect-version-change.outputs.changed == 'true' # only run when bumped :contentReference[oaicite:2]{index=2}
+    runs-on: ubuntu-latest
+    permissions: { contents: read, packages: write }
 
     steps:
       - name: Checkout repository

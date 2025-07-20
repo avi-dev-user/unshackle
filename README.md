@@ -41,10 +41,56 @@ uv tool install git+https://github.com/unshackle-dl/unshackle.git
 uvx unshackle --help   # or just `unshackle` once PATH updated
 ```
 
+### Docker Installation
+
+Run unshackle using our pre-built Docker image from GitHub Container Registry:
+
+```bash
+# Run with default help command
+docker run --rm ghcr.io/unshackle-dl/unshackle:latest
+
+# Check environment dependencies
+docker run --rm ghcr.io/unshackle-dl/unshackle:latest env check
+
+# Download content (mount directories for persistent data)
+docker run --rm \
+  -v "$(pwd)/downloads:/downloads" \
+  -v "$(pwd)/unshackle/cookies:/app/unshackle/cookies" \
+  -v "$(pwd)/unshackle/services:/app/unshackle/services" \
+  -v "$(pwd)/unshackle.yaml:/app/unshackle.yaml" \
+  ghcr.io/unshackle-dl/unshackle:latest dl SERVICE_NAME CONTENT_ID
+
+# Run interactively for configuration
+docker run --rm -it \
+  -v "$(pwd)/unshackle/cookies:/app/unshackle/cookies" \
+  -v "$(pwd)/unshackle/services:/app/unshackle/services" \
+  -v "$(pwd)/unshackle.yaml:/app/unshackle.yaml" \
+  ghcr.io/unshackle-dl/unshackle:latest cfg
+```
+
+**Alternative: Build locally**
+
+```bash
+# Clone and build your own image
+git clone https://github.com/unshackle-dl/unshackle.git
+cd unshackle
+docker build -t unshackle .
+docker run --rm unshackle env check
+```
+
 > [!NOTE]
 > After installation, you may need to add the installation path to your PATH environment variable if prompted.
 
 > **Recommended:** Use `uv run unshackle` instead of direct command execution to ensure proper virtual environment activation.
+
+## Planned Features
+
+- 🌈 **HDR10+DV Hybrid Support** - Allow support for hybrid HDR10+ and Dolby Vision.
+- 🖥️ **Web UI Access & Control** - Manage and control unshackle from a modern web interface.
+- 🔄 **Sonarr/Radarr Interactivity** - Direct integration for automated personal downloads.
+- ⚙️ **Better ISM Support** - Improve on ISM support for multiple services
+- 🔉 **ATMOS** - Better Atmos Support/Selection
+- 🎵 **Music** - Cleanup Audio Tagging using the [tags.py](unshackle/core/utils/tags.py) for artist/track name etc.
 
 ### Basic Usage
 
@@ -53,24 +99,14 @@ uvx unshackle --help   # or just `unshackle` once PATH updated
 uv run unshackle --help
 
 # Configure your settings
-uv run unshackle cfg --help
-
-# Confirm setup and all dependencies exist
-uv run automaterr env check
+git clone https://github.com/unshackle-dl/unshackle.git
+cd unshackle
+uv sync
+uv run unshackle --help
 
 # Download content (requires configured services)
 uv run unshackle dl SERVICE_NAME CONTENT_ID
 ```
-
-## Planned Features
-
-- 🌈 **HDR10+DV Hybrid Support** - Allow support for hybrid HDR10+ and Dolby Vision.
-- 🖥️ **Web UI Access & Control** - Manage and control unshackle from a modern web interface.
-- 🔄 **Sonarr/Radarr Interactivity** - Direct integration for automated personal downloads.
-- ⚙️ **Better ISM Support** - Improve on ISM support for multiple services
-- 🐳 **Docker Image** - Prepared Docker Image with everything ready to go.
-- 🔉 **ATMOS** - Better Atmos Support/Selection
-- 🎵 **Music** - Cleanup Audio Tagging using the [tags.py](unshackle/core/utils/tags.py) for artist/track name etc.
 
 ## Documentation
 
