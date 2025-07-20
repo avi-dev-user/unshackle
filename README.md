@@ -54,12 +54,11 @@ docker run --rm ghcr.io/unshackle-dl/unshackle:latest env check
 
 # Download content (mount directories for persistent data)
 docker run --rm \
-  -v "$(pwd)/downloads:/downloads" \
+  -v "$(pwd)/unshackle/downloads:/app/downloads" \
   -v "$(pwd)/unshackle/cookies:/app/unshackle/cookies" \
   -v "$(pwd)/unshackle/services:/app/unshackle/services" \
   -v "$(pwd)/unshackle/WVDs:/app/unshackle/WVDs" \
   -v "$(pwd)/unshackle/PRDs:/app/unshackle/PRDs" \
-  -v "$(pwd)/temp:/app/temp" \
   -v "$(pwd)/unshackle/unshackle.yaml:/app/unshackle.yaml" \
   ghcr.io/unshackle-dl/unshackle:latest dl SERVICE_NAME CONTENT_ID
 
