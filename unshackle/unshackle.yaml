@@ -145,13 +145,6 @@ services:
   # EXAMPLE:
   #   api_key: "service_specific_key"
 
-# Legacy NordVPN configuration (use proxy_providers instead)
-nordvpn:
-  username: ""
-  password: ""
-  servers:
-    - us: 12
-
 # External proxy provider services
 proxy_providers:
   nordvpn:
@@ -159,6 +152,13 @@ proxy_providers:
     password: password_from_service_credentials
     servers:
       - us: 12 # force US server #12 for US proxies
+  surfsharkvpn:
+    username: your_surfshark_service_username # Service credentials from https://my.surfshark.com/vpn/manual-setup/main/openvpn
+    password: your_surfshark_service_password # Service credentials (not your login password)
+    servers:
+      - us: 3844 # force US server #3844 for US proxies
+      - gb: 2697 # force GB server #2697 for GB proxies
+      - au: 4621 # force AU server #4621 for AU proxies
   basic:
     GB:
       - "socks5://username:password@bhx.socks.ipvanish.com:1080" # 1 (Birmingham)

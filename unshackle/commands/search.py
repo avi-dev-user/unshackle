@@ -16,7 +16,7 @@ from unshackle.core import binaries
 from unshackle.core.config import config
 from unshackle.core.console import console
 from unshackle.core.constants import context_settings
-from unshackle.core.proxies import Basic, Hola, NordVPN
+from unshackle.core.proxies import Basic, Hola, NordVPN, SurfsharkVPN
 from unshackle.core.service import Service
 from unshackle.core.services import Services
 from unshackle.core.utils.click_types import ContextData
@@ -69,6 +69,8 @@ def search(ctx: click.Context, no_proxy: bool, profile: Optional[str] = None, pr
                 proxy_providers.append(Basic(**config.proxy_providers["basic"]))
             if config.proxy_providers.get("nordvpn"):
                 proxy_providers.append(NordVPN(**config.proxy_providers["nordvpn"]))
+            if config.proxy_providers.get("surfsharkvpn"):
+                proxy_providers.append(SurfsharkVPN(**config.proxy_providers["surfsharkvpn"]))
             if binaries.HolaProxy:
                 proxy_providers.append(Hola())
             for proxy_provider in proxy_providers:
