@@ -1,47 +1,61 @@
 @echo off
-echo Installing unshackle dependencies...
+setlocal EnableExtensions EnableDelayedExpansion
+
+echo.
+echo === Unshackle setup (Windows) ===
 echo.
 
-REM Check if UV is already installed
-uv --version >nul 2>&1
+where uv >nul 2>&1
 if %errorlevel% equ 0 (
-    echo UV is already installed.
+    echo [OK] uv is already installed.
     goto install_deps
 )
 
-echo UV not found. Installing UV...
-echo.
+echo [..] uv not found. Installing...
 
-REM Install UV using the official installer
-powershell -Command "irm https://astral.sh/uv/install.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://astral.sh/uv/install.ps1 | iex"
 if %errorlevel% neq 0 (
-    echo Failed to install UV. Please install UV manually from https://docs.astral.sh/uv/getting-started/installation/
+    echo [ERR] Failed to install uv.
+    echo PowerShell may be blocking scripts. Try:
+    echo   Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+    echo or install manually: https://docs.astral.sh/uv/getting-started/installation/
     pause
     exit /b 1
 )
 
-REM Add UV to PATH for current session
-set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
+set "UV_BIN="
+for %%D in ("%USERPROFILE%\.local\bin" "%LOCALAPPDATA%\Programs\uv\bin" "%USERPROFILE%\.cargo\bin") do (
+    if exist "%%~fD\uv.exe" set "UV_BIN=%%~fD"
+)
 
-echo UV installed successfully.
-echo.
+if not defined UV_BIN (
+    echo [WARN] Could not locate uv.exe. You may need to reopen your terminal.
+) else (
+    set "PATH=%UV_BIN%;%PATH%"
+)
+
+:: Verify
+uv --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [ERR] uv still not reachable in this shell. Open a new terminal and re-run this script.
+    pause
+    exit /b 1
+)
+echo [OK] uv installed and reachable.
 
 :install_deps
-echo Installing project dependencies in editable mode with dev dependencies...
 echo.
-
-REM Install the project in editable mode with dev dependencies
 uv sync
 if %errorlevel% neq 0 (
-    echo Failed to install dependencies. Please check the error messages above.
+    echo [ERR] Dependency install failed. See errors above.
     pause
     exit /b 1
 )
 
 echo.
 echo Installation completed successfully!
-echo.
-echo You can now run unshackle using:
+echo Try:
 echo   uv run unshackle --help
 echo.
 pause
+endlocal
