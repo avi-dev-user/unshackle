@@ -98,12 +98,21 @@ def info() -> None:
     for name in sorted(dir(config.directories)):
         if name.startswith("__") or name == "app_dirs":
             continue
-        path = getattr(config.directories, name).resolve()
-        for var, var_path in path_vars.items():
-            if path.is_relative_to(var_path):
-                path = rf"%{var}%\{path.relative_to(var_path)}"
-                break
-        table.add_row(name.title(), str(path))
+        attr_value = getattr(config.directories, name)
+
+        # Handle both single Path objects and lists of Path objects
+        if isinstance(attr_value, list):
+            # For lists, show each path on a separate line
+            paths_str = "\n".join(str(path.resolve()) for path in attr_value)
+            table.add_row(name.title(), paths_str)
+        else:
+            # For single Path objects, use the original logic
+            path = attr_value.resolve()
+            for var, var_path in path_vars.items():
+                if path.is_relative_to(var_path):
+                    path = rf"%{var}%\{path.relative_to(var_path)}"
+                    break
+            table.add_row(name.title(), str(path))
 
     console.print(Padding(table, (1, 5)))
 
