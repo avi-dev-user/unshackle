@@ -15,7 +15,6 @@ from unshackle.core.config import POSSIBLE_CONFIG_PATHS, config, config_path
 from unshackle.core.console import console
 from unshackle.core.constants import context_settings
 from unshackle.core.services import Services
-from unshackle.core.utils.osenvironment import get_os_arch
 
 
 @click.group(short_help="Manage and configure the project environment.", context_settings=context_settings)
@@ -28,31 +27,37 @@ def check() -> None:
     """Checks environment for the required dependencies."""
     table = Table(title="Dependencies", expand=True)
     table.add_column("Name", no_wrap=True)
+    table.add_column("Required", justify="center")
     table.add_column("Installed", justify="center")
     table.add_column("Path", no_wrap=False, overflow="fold")
 
-    # builds shaka-packager based on os, arch
-    packager_dep = get_os_arch("packager")
-
-    # Helper function to find binary with multiple possible names
-    def find_binary(*names):
-        for name in names:
-            if binaries.find(name):
-                return name
-        return names[0]  # Return first name as fallback for display
-
+    # Define all dependencies with their binary objects and required status
     dependencies = [
-        {"name": "CCExtractor", "binary": "ccextractor"},
-        {"name": "FFMpeg", "binary": "ffmpeg"},
-        {"name": "MKVToolNix", "binary": "mkvmerge"},
-        {"name": "Shaka-Packager", "binary": find_binary("shaka-packager", "packager", packager_dep)},
-        {"name": "N_m3u8DL-RE", "binary": find_binary("N_m3u8DL-RE", "n-m3u8dl-re")},
-        {"name": "Aria2(c)", "binary": "aria2c"},
+        {"name": "FFMpeg", "binary": binaries.FFMPEG, "required": True},
+        {"name": "FFProbe", "binary": binaries.FFProbe, "required": True},
+        {"name": "Shaka-Packager", "binary": binaries.ShakaPackager, "required": True},
+        {"name": "MKVToolNix", "binary": binaries.MKVToolNix, "required": True},
+        {"name": "Mkvpropedit", "binary": binaries.Mkvpropedit, "required": True},
+        {"name": "CCExtractor", "binary": binaries.CCExtractor, "required": False},
+        {"name": "FFPlay", "binary": binaries.FFPlay, "required": False},
+        {"name": "SubtitleEdit", "binary": binaries.SubtitleEdit, "required": False},
+        {"name": "Aria2(c)", "binary": binaries.Aria2, "required": False},
+        {"name": "HolaProxy", "binary": binaries.HolaProxy, "required": False},
+        {"name": "MPV", "binary": binaries.MPV, "required": False},
+        {"name": "Caddy", "binary": binaries.Caddy, "required": False},
+        {"name": "N_m3u8DL-RE", "binary": binaries.N_m3u8DL_RE, "required": False},
     ]
 
     for dep in dependencies:
-        path = binaries.find(dep["binary"])
+        path = dep["binary"]
 
+        # Required column
+        if dep["required"]:
+            required = "[red]Yes[/red]"
+        else:
+            required = "No"
+
+        # Installed column
         if path:
             installed = "[green]:heavy_check_mark:[/green]"
             path_output = str(path)
@@ -61,7 +66,7 @@ def check() -> None:
             path_output = "Not Found"
 
         # Add to the table
-        table.add_row(dep["name"], installed, path_output)
+        table.add_row(dep["name"], required, installed, path_output)
 
     # Display the result
     console.print(Padding(table, (1, 5)))

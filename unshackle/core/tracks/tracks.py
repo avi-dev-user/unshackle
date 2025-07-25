@@ -11,6 +11,7 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeRe
 from rich.table import Table
 from rich.tree import Tree
 
+from unshackle.core import binaries
 from unshackle.core.config import config
 from unshackle.core.console import console
 from unshackle.core.constants import LANGUAGE_MAX_DISTANCE, AnyTrack, TrackT
@@ -290,8 +291,11 @@ class Tracks:
             progress: Update a rich progress bar via `completed=...`. This must be the
                 progress object's update() func, pre-set with task id via functools.partial.
         """
+        if not binaries.MKVToolNix:
+            raise RuntimeError("MKVToolNix (mkvmerge) is required for muxing but was not found")
+
         cl = [
-            "mkvmerge",
+            str(binaries.MKVToolNix),
             "--no-date",  # remove dates from the output for security
         ]
 

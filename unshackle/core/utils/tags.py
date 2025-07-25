@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-import shutil
 import subprocess
 import tempfile
 from difflib import SequenceMatcher
@@ -12,6 +11,7 @@ from typing import Optional, Tuple
 
 import requests
 
+from unshackle.core import binaries
 from unshackle.core.config import config
 from unshackle.core.titles.episode import Episode
 from unshackle.core.titles.movie import Movie
@@ -175,8 +175,7 @@ def external_ids(tmdb_id: int, kind: str) -> dict:
 def _apply_tags(path: Path, tags: dict[str, str]) -> None:
     if not tags:
         return
-    mkvpropedit = shutil.which("mkvpropedit")
-    if not mkvpropedit:
+    if not binaries.Mkvpropedit:
         log.debug("mkvpropedit not found on PATH; skipping tags")
         return
     log.debug("Applying tags to %s: %s", path, tags)
@@ -189,7 +188,7 @@ def _apply_tags(path: Path, tags: dict[str, str]) -> None:
         tmp_path = Path(f.name)
     try:
         subprocess.run(
-            [mkvpropedit, str(path), "--tags", f"global:{tmp_path}"],
+            [str(binaries.Mkvpropedit), str(path), "--tags", f"global:{tmp_path}"],
             check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

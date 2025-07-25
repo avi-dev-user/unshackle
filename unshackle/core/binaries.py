@@ -49,6 +49,8 @@ HolaProxy = find("hola-proxy")
 MPV = find("mpv")
 Caddy = find("caddy")
 N_m3u8DL_RE = find("N_m3u8DL-RE", "n-m3u8dl-re")
+MKVToolNix = find("mkvmerge")
+Mkvpropedit = find("mkvpropedit")
 
 
 __all__ = (
@@ -63,5 +65,7 @@ __all__ = (
     "MPV",
     "Caddy",
     "N_m3u8DL_RE",
+    "MKVToolNix",
+    "Mkvpropedit",
     "find",
 )
