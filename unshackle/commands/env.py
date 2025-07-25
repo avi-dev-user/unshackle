@@ -10,6 +10,7 @@ from rich.padding import Padding
 from rich.table import Table
 from rich.tree import Tree
 
+from unshackle.core import binaries
 from unshackle.core.config import POSSIBLE_CONFIG_PATHS, config, config_path
 from unshackle.core.console import console
 from unshackle.core.constants import context_settings
@@ -36,7 +37,7 @@ def check() -> None:
     # Helper function to find binary with multiple possible names
     def find_binary(*names):
         for name in names:
-            if shutil.which(name):
+            if binaries.find(name):
                 return name
         return names[0]  # Return first name as fallback for display
 
@@ -50,11 +51,11 @@ def check() -> None:
     ]
 
     for dep in dependencies:
-        path = shutil.which(dep["binary"])
+        path = binaries.find(dep["binary"])
 
         if path:
             installed = "[green]:heavy_check_mark:[/green]"
-            path_output = path.lower()
+            path_output = str(path)
         else:
             installed = "[red]:x:[/red]"
             path_output = "Not Found"
