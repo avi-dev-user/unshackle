@@ -8,7 +8,24 @@ __shaka_platform = {"win32": "win", "darwin": "osx"}.get(sys.platform, sys.platf
 
 def find(*names: str) -> Optional[Path]:
     """Find the path of the first found binary name."""
+    # Get the directory containing this file to find the local binaries folder
+    current_dir = Path(__file__).parent.parent
+    local_binaries_dir = current_dir / "binaries"
+
     for name in names:
+        # First check local binaries folder
+        if local_binaries_dir.exists():
+            local_path = local_binaries_dir / name
+            if local_path.is_file() and local_path.stat().st_mode & 0o111:  # Check if executable
+                return local_path
+
+            # Also check with .exe extension on Windows
+            if sys.platform == "win32":
+                local_path_exe = local_binaries_dir / f"{name}.exe"
+                if local_path_exe.is_file():
+                    return local_path_exe
+
+        # Fall back to system PATH
         path = shutil.which(name)
         if path:
             return Path(path)

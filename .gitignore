@@ -18,7 +18,6 @@ device_cert
 device_client_id_blob
 device_private_key
 device_vmp_blob
-binaries/
 unshackle/cache/
 unshackle/cookies/
 unshackle/certs/
