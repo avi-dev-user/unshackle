@@ -45,7 +45,7 @@ def check() -> None:
         {"name": "CCExtractor", "binary": "ccextractor"},
         {"name": "FFMpeg", "binary": "ffmpeg"},
         {"name": "MKVToolNix", "binary": "mkvmerge"},
-        {"name": "Shaka-Packager", "binary": packager_dep},
+        {"name": "Shaka-Packager", "binary": find_binary("shaka-packager", "packager", packager_dep)},
         {"name": "N_m3u8DL-RE", "binary": find_binary("N_m3u8DL-RE", "n-m3u8dl-re")},
         {"name": "Aria2(c)", "binary": "aria2c"},
     ]

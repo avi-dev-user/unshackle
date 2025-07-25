@@ -1,6 +1,6 @@
 import json
-import re
 import random
+import re
 from typing import Optional
 
 import requests
