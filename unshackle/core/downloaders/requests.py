@@ -90,6 +90,11 @@ def download(
                 if not segmented:
                     try:
                         content_length = int(stream.headers.get("Content-Length", "0"))
+
+                        # Skip Content-Length validation for compressed responses since
+                        # requests automatically decompresses but Content-Length shows compressed size
+                        if stream.headers.get("Content-Encoding", "").lower() in ["gzip", "deflate", "br"]:
+                            content_length = 0
                     except ValueError:
                         content_length = 0
 
