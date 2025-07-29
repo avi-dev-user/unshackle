@@ -1,16 +1,16 @@
-import logging
-import subprocess
-import os
-import sys
 import json
-
+import logging
+import os
+import subprocess
+import sys
 from pathlib import Path
-from rich.rule import Rule
-from rich.padding import Padding
 
+from rich.padding import Padding
+from rich.rule import Rule
+
+from unshackle.core.binaries import DoviTool
 from unshackle.core.config import config
 from unshackle.core.console import console
-from unshackle.core.binaries import DoviTool
 
 
 class Hybrid:
