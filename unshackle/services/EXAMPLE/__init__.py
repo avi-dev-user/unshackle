@@ -16,7 +16,7 @@ from unshackle.core.manifests import DASH
 from unshackle.core.search_result import SearchResult
 from unshackle.core.service import Service
 from unshackle.core.titles import Episode, Movie, Movies, Series, Title_T, Titles_T
-from unshackle.core.tracks import Chapter, Subtitle, Tracks
+from unshackle.core.tracks import Chapter, Subtitle, Tracks, Video
 
 
 class EXAMPLE(Service):
@@ -49,6 +49,11 @@ class EXAMPLE(Service):
         self.title = title
         self.movie = movie
         self.device = device
+        self.cdm = ctx.obj.cdm
+
+        # Get range parameter for HDR support
+        range_param = ctx.parent.params.get("range_")
+        self.range = range_param[0].name if range_param else "SDR"
 
         if self.config is None:
             raise Exception("Config is missing!")
@@ -160,15 +165,54 @@ class EXAMPLE(Service):
             return Series(episodes)
 
     def get_tracks(self, title: Title_T) -> Tracks:
+        # Handle HYBRID mode by fetching both HDR10 and DV tracks separately
+        if self.range == "HYBRID" and self.cdm.security_level != 3:
+            tracks = Tracks()
+
+            # Get HDR10 tracks
+            hdr10_tracks = self._get_tracks_for_range(title, "HDR10")
+            tracks.add(hdr10_tracks, warn_only=True)
+
+            # Get DV tracks
+            dv_tracks = self._get_tracks_for_range(title, "DV")
+            tracks.add(dv_tracks, warn_only=True)
+
+            return tracks
+        else:
+            # Normal single-range behavior
+            return self._get_tracks_for_range(title, self.range)
+
+    def _get_tracks_for_range(self, title: Title_T, range_override: str = None) -> Tracks:
+        # Use range_override if provided, otherwise use self.range
+        current_range = range_override if range_override else self.range
+
+        # Build API request parameters
+        params = {
+            "token": self.token,
+            "guid": title.id,
+        }
+
+        data = {
+            "type": self.config["client"][self.device]["type"],
+        }
+
+        # Add range-specific parameters
+        if current_range == "HDR10":
+            data["video_format"] = "hdr10"
+        elif current_range == "DV":
+            data["video_format"] = "dolby_vision"
+        else:
+            data["video_format"] = "sdr"
+
+        # Only request high-quality HDR content with L1 CDM
+        if current_range in ("HDR10", "DV") and self.cdm.security_level == 3:
+            # L3 CDM - skip HDR content
+            return Tracks()
+
         streams = self.session.post(
             url=self.config["endpoints"]["streams"],
-            params={
-                "token": self.token,
-                "guid": title.id,
-            },
-            data={
-                "type": self.config["client"][self.device]["type"],
-            },
+            params=params,
+            data=data,
         ).json()["media"]
 
         self.license = {
@@ -181,6 +225,15 @@ class EXAMPLE(Service):
 
         self.log.debug(f"Manifest URL: {manifest_url}")
         tracks = DASH.from_url(url=manifest_url, session=self.session).to_tracks(language=title.language)
+
+        # Set range attributes on video tracks
+        for video in tracks.videos:
+            if current_range == "HDR10":
+                video.range = Video.Range.HDR10
+            elif current_range == "DV":
+                video.range = Video.Range.DV
+            else:
+                video.range = Video.Range.SDR
 
         # Remove DRM-free ("clear") audio tracks
         tracks.audio = [
