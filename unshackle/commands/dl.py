@@ -400,6 +400,14 @@ class dl:
         self.tmdb_searched = False
         start_time = time.time()
 
+        # Check if dovi_tool is available when hybrid mode is requested
+        if any(r == Video.Range.HYBRID for r in range_):
+            from unshackle.core.binaries import DoviTool
+            if not DoviTool:
+                self.log.error("Unable to run hybrid mode: dovi_tool not detected")
+                self.log.error("Please install dovi_tool from https://github.com/quietvoid/dovi_tool")
+                sys.exit(1)
+
         if cdm_only is None:
             vaults_only = None
         else:
