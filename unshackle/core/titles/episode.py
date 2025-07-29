@@ -107,10 +107,6 @@ class Episode(Title):
                 name=self.name or "",
             ).strip()
 
-        # MULTi
-        if unique_audio_languages > 1:
-            name += " MULTi"
-
         # Resolution
         if primary_video_track:
             resolution = primary_video_track.height
@@ -135,6 +131,14 @@ class Episode(Title):
         # 'WEB-DL'
         name += " WEB-DL"
 
+        # DUAL
+        if unique_audio_languages == 2:
+            name += " DUAL"
+
+        # MULTi
+        if unique_audio_languages > 2:
+            name += " MULTi"
+
         # Audio Codec + Channels (+ feature)
         if primary_audio_track:
             codec = primary_audio_track.format
@@ -157,7 +161,11 @@ class Episode(Title):
             trc = primary_video_track.transfer_characteristics or primary_video_track.transfer_characteristics_original
             frame_rate = float(primary_video_track.frame_rate)
             if hdr_format:
-                name += f" {DYNAMIC_RANGE_MAP.get(hdr_format)} "
+                if (primary_video_track.hdr_format or "").startswith("Dolby Vision"):
+                    if (primary_video_track.hdr_format_commercial) != "Dolby Vision":
+                        name += f" DV {DYNAMIC_RANGE_MAP.get(hdr_format)} "
+                else:
+                    name += f" {DYNAMIC_RANGE_MAP.get(hdr_format)} "
             elif trc and "HLG" in trc:
                 name += " HLG"
             if frame_rate > 30:

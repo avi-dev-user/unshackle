@@ -35,7 +35,7 @@ def check() -> None:
     dependencies = [
         {"name": "FFMpeg", "binary": binaries.FFMPEG, "required": True},
         {"name": "FFProbe", "binary": binaries.FFProbe, "required": True},
-        {"name": "Shaka-Packager", "binary": binaries.ShakaPackager, "required": True},
+        {"name": "shaka-packager", "binary": binaries.ShakaPackager, "required": True},
         {"name": "MKVToolNix", "binary": binaries.MKVToolNix, "required": True},
         {"name": "Mkvpropedit", "binary": binaries.Mkvpropedit, "required": True},
         {"name": "CCExtractor", "binary": binaries.CCExtractor, "required": False},
@@ -46,6 +46,7 @@ def check() -> None:
         {"name": "MPV", "binary": binaries.MPV, "required": False},
         {"name": "Caddy", "binary": binaries.Caddy, "required": False},
         {"name": "N_m3u8DL-RE", "binary": binaries.N_m3u8DL_RE, "required": False},
+        {"name": "dovi_tool", "binary": binaries.DoviTool, "required": False},
     ]
 
     for dep in dependencies:

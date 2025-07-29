@@ -14,6 +14,7 @@ unshackle is a fork of [Devine](https://github.com/devine-dl/devine/), a powerfu
 - 🎥 **Multi-Media Support** - Movies, TV episodes, and music
 - 🛠️ **Built-in Parsers** - DASH/HLS and ISM manifest support
 - 🔒 **DRM Support** - Widevine and PlayReady integration
+- 🌈 **HDR10+DV Hybrid** - Hybrid Dolby Vision injection via [dovi_tool](https://github.com/quietvoid/dovi_tool)
 - 💾 **Flexible Storage** - Local and remote key vaults
 - 👥 **Multi-Profile Auth** - Support for cookies and credentials
 - 🤖 **Smart Naming** - Automatic P2P-style filename structure
@@ -87,7 +88,6 @@ docker run --rm unshackle env check
 
 ## Planned Features
 
-- 🌈 **HDR10+DV Hybrid Support** - Allow support for hybrid HDR10+ and Dolby Vision.
 - 🖥️ **Web UI Access & Control** - Manage and control unshackle from a modern web interface.
 - 🔄 **Sonarr/Radarr Interactivity** - Direct integration for automated personal downloads.
 - ⚙️ **Better ISM Support** - Improve on ISM support for multiple services
