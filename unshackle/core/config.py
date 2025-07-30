@@ -45,6 +45,7 @@ class Config:
         self.curl_impersonate: dict = kwargs.get("curl_impersonate") or {}
         self.remote_cdm: list[dict] = kwargs.get("remote_cdm") or []
         self.credentials: dict = kwargs.get("credentials") or {}
+        self.subtitle: dict = kwargs.get("subtitle") or {}
 
         self.directories = self._Directories()
         for name, path in (kwargs.get("directories") or {}).items():

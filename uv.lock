@@ -1392,6 +1392,26 @@ wheels = [
 ]
 
 [[package]]
+name = "srt"
+version = "3.5.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/66/b7/4a1bc231e0681ebf339337b0cd05b91dc6a0d701fa852bb812e244b7a030/srt-3.5.3.tar.gz", hash = "sha256:4884315043a4f0740fd1f878ed6caa376ac06d70e135f306a6dc44632eed0cc0", size = 28296, upload-time = "2023-03-28T02:35:44.007Z" }
+
+[[package]]
+name = "subby"
+version = "0.3.21"
+source = { git = "https://github.com/vevv/subby.git#390cb2f4a55e98057cdd65314d8cbffd5d0a11f1" }
+dependencies = [
+    { name = "beautifulsoup4" },
+    { name = "click" },
+    { name = "langcodes" },
+    { name = "lxml" },
+    { name = "pymp4" },
+    { name = "srt" },
+    { name = "tinycss" },
+]
+
+[[package]]
 name = "subtitle-filter"
 version = "1.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1399,6 +1419,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/15/6a/34a3205895c1c9b64
 wheels = [
     { url = "https://files.pythonhosted.org/packages/10/40/c5d138e1f302b25240678943422a646feea52bab1f594c669c101c5e5070/subtitle_filter-1.5.0-py3-none-any.whl", hash = "sha256:6b506315be64870fba2e6894a70d76389407ce58c325fdf05129e0530f0a0f5b", size = 8346, upload-time = "2024-08-01T22:42:47.787Z" },
 ]
+
+[[package]]
+name = "tinycss"
+version = "0.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/05/59/af583fff6236c7d2f94f8175c40ce501dcefb8d1b42e4bb7a2622dff689e/tinycss-0.4.tar.gz", hash = "sha256:12306fb50e5e9e7eaeef84b802ed877488ba80e35c672867f548c0924a76716e", size = 87759, upload-time = "2016-09-23T16:30:14.894Z" }
 
 [[package]]
 name = "tomli"
@@ -1510,6 +1536,7 @@ dependencies = [
     { name = "rlaphoenix-m3u8" },
     { name = "ruamel-yaml" },
     { name = "sortedcontainers" },
+    { name = "subby" },
     { name = "subtitle-filter" },
     { name = "unidecode" },
     { name = "urllib3" },
@@ -1558,6 +1585,7 @@ requires-dist = [
     { name = "rlaphoenix-m3u8", specifier = ">=3.4.0,<4" },
     { name = "ruamel-yaml", specifier = ">=0.18.6,<0.19" },
     { name = "sortedcontainers", specifier = ">=2.4.0,<3" },
+    { name = "subby", git = "https://github.com/vevv/subby.git" },
     { name = "subtitle-filter", specifier = ">=1.4.9,<2" },
     { name = "unidecode", specifier = ">=1.3.8,<2" },
     { name = "urllib3", specifier = ">=2.2.1,<3" },

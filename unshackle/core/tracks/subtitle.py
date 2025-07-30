@@ -15,9 +15,11 @@ from construct import Container
 from pycaption import Caption, CaptionList, CaptionNode, WebVTTReader
 from pycaption.geometry import Layout
 from pymp4.parser import MP4
+from subby import CommonIssuesFixer, SAMIConverter, SDHStripper, WebVTTConverter
 from subtitle_filter import Subtitles
 
 from unshackle.core import binaries
+from unshackle.core.config import config
 from unshackle.core.tracks.track import Track
 from unshackle.core.utilities import try_ensure_utf8
 from unshackle.core.utils.webvtt import merge_segmented_webvtt
@@ -30,6 +32,7 @@ class Subtitle(Track):
         SubStationAlphav4 = "ASS"  # https://wikipedia.org/wiki/SubStation_Alpha#Advanced_SubStation_Alpha=
         TimedTextMarkupLang = "TTML"  # https://wikipedia.org/wiki/Timed_Text_Markup_Language
         WebVTT = "VTT"  # https://wikipedia.org/wiki/WebVTT
+        SAMI = "SMI"  # https://wikipedia.org/wiki/SAMI
         # MPEG-DASH box-encapsulated subtitle formats
         fTTML = "STPP"  # https://www.w3.org/TR/2018/REC-ttml-imsc1.0.1-20180424
         fVTT = "WVTT"  # https://www.w3.org/TR/webvtt1
@@ -51,6 +54,8 @@ class Subtitle(Track):
                 return Subtitle.Codec.TimedTextMarkupLang
             elif mime == "vtt":
                 return Subtitle.Codec.WebVTT
+            elif mime in ("smi", "sami"):
+                return Subtitle.Codec.SAMI
             elif mime == "stpp":
                 return Subtitle.Codec.fTTML
             elif mime == "wvtt":
@@ -306,7 +311,155 @@ class Subtitle(Track):
 
         return "\n".join(sanitized_lines)
 
+    def convert_with_subby(self, codec: Subtitle.Codec) -> Path:
+        """
+        Convert subtitle using subby library for better format support and processing.
+
+        This method leverages subby's advanced subtitle processing capabilities
+        including better WebVTT handling, SDH stripping, and common issue fixing.
+        """
+
+        if not self.path or not self.path.exists():
+            raise ValueError("You must download the subtitle track first.")
+
+        if self.codec == codec:
+            return self.path
+
+        output_path = self.path.with_suffix(f".{codec.value.lower()}")
+        original_path = self.path
+
+        try:
+            # Convert to SRT using subby first
+            srt_subtitles = None
+
+            if self.codec == Subtitle.Codec.WebVTT:
+                converter = WebVTTConverter()
+                srt_subtitles = converter.from_file(str(self.path))
+            elif self.codec == Subtitle.Codec.SAMI:
+                converter = SAMIConverter()
+                srt_subtitles = converter.from_file(str(self.path))
+
+            if srt_subtitles is not None:
+                # Apply common fixes
+                fixer = CommonIssuesFixer()
+                fixed_srt, _ = fixer.from_srt(srt_subtitles)
+
+                # If target is SRT, we're done
+                if codec == Subtitle.Codec.SubRip:
+                    output_path.write_text(str(fixed_srt), encoding="utf8")
+                else:
+                    # Convert from SRT to target format using existing pycaption logic
+                    temp_srt_path = self.path.with_suffix(".temp.srt")
+                    temp_srt_path.write_text(str(fixed_srt), encoding="utf8")
+
+                    # Parse the SRT and convert to target format
+                    caption_set = self.parse(temp_srt_path.read_bytes(), Subtitle.Codec.SubRip)
+                    self.merge_same_cues(caption_set)
+
+                    writer = {
+                        Subtitle.Codec.TimedTextMarkupLang: pycaption.DFXPWriter,
+                        Subtitle.Codec.WebVTT: pycaption.WebVTTWriter,
+                    }.get(codec)
+
+                    if writer:
+                        subtitle_text = writer().write(caption_set)
+                        output_path.write_text(subtitle_text, encoding="utf8")
+                    else:
+                        # Fall back to existing conversion method
+                        temp_srt_path.unlink()
+                        return self._convert_standard(codec)
+
+                    temp_srt_path.unlink()
+
+                if original_path.exists() and original_path != output_path:
+                    original_path.unlink()
+
+                self.path = output_path
+                self.codec = codec
+
+                if callable(self.OnConverted):
+                    self.OnConverted(codec)
+
+                return output_path
+            else:
+                # Fall back to existing conversion method
+                return self._convert_standard(codec)
+
+        except Exception:
+            # Fall back to existing conversion method on any error
+            return self._convert_standard(codec)
+
     def convert(self, codec: Subtitle.Codec) -> Path:
+        """
+        Convert this Subtitle to another Format.
+
+        The conversion method is determined by the 'conversion_method' setting in config:
+        - 'auto' (default): Uses subby for WebVTT/SAMI, standard for others
+        - 'subby': Always uses subby with CommonIssuesFixer
+        - 'subtitleedit': Uses SubtitleEdit when available, falls back to pycaption
+        - 'pycaption': Uses only pycaption library
+        """
+        # Check configuration for conversion method
+        conversion_method = config.subtitle.get("conversion_method", "auto")
+
+        if conversion_method == "subby":
+            return self.convert_with_subby(codec)
+        elif conversion_method == "subtitleedit":
+            return self._convert_standard(codec)  # SubtitleEdit is used in standard conversion
+        elif conversion_method == "pycaption":
+            return self._convert_pycaption_only(codec)
+        elif conversion_method == "auto":
+            # Use subby for formats it handles better
+            if self.codec in (Subtitle.Codec.WebVTT, Subtitle.Codec.SAMI):
+                return self.convert_with_subby(codec)
+            else:
+                return self._convert_standard(codec)
+        else:
+            return self._convert_standard(codec)
+
+    def _convert_pycaption_only(self, codec: Subtitle.Codec) -> Path:
+        """
+        Convert subtitle using only pycaption library (no SubtitleEdit, no subby).
+
+        This is the original conversion method that only uses pycaption.
+        """
+        if not self.path or not self.path.exists():
+            raise ValueError("You must download the subtitle track first.")
+
+        if self.codec == codec:
+            return self.path
+
+        output_path = self.path.with_suffix(f".{codec.value.lower()}")
+        original_path = self.path
+
+        # Use only pycaption for conversion
+        writer = {
+            Subtitle.Codec.SubRip: pycaption.SRTWriter,
+            Subtitle.Codec.TimedTextMarkupLang: pycaption.DFXPWriter,
+            Subtitle.Codec.WebVTT: pycaption.WebVTTWriter,
+        }.get(codec)
+
+        if writer is None:
+            raise NotImplementedError(f"Cannot convert {self.codec.name} to {codec.name} using pycaption only.")
+
+        caption_set = self.parse(self.path.read_bytes(), self.codec)
+        Subtitle.merge_same_cues(caption_set)
+        subtitle_text = writer().write(caption_set)
+
+        output_path.write_text(subtitle_text, encoding="utf8")
+
+        if original_path.exists() and original_path != output_path:
+            original_path.unlink()
+
+        self.path = output_path
+        self.codec = codec
+
+        if callable(self.OnConverted):
+            self.OnConverted(codec)
+
+        return output_path
+
+    def _convert_standard(self, codec: Subtitle.Codec) -> Path:
         """
         Convert this Subtitle to another Format.
 
@@ -318,6 +471,7 @@ class Subtitle(Track):
         - TimedTextMarkupLang - SubtitleEdit or pycaption.DFXPWriter
         - WebVTT - SubtitleEdit or pycaption.WebVTTWriter
         - SubStationAlphav4 - SubtitleEdit
+        - SAMI - subby.SAMIConverter (when available)
         - fTTML* - custom code using some pycaption functions
         - fVTT* - custom code using some pycaption functions
         *: Can read from format, but cannot convert to format
@@ -416,6 +570,13 @@ class Subtitle(Track):
                 text = Subtitle.sanitize_broken_webvtt(text)
                 text = Subtitle.space_webvtt_headers(text)
                 caption_set = pycaption.WebVTTReader().read(text)
+            elif codec == Subtitle.Codec.SAMI:
+                # Use subby for SAMI parsing
+                converter = SAMIConverter()
+                srt_subtitles = converter.from_bytes(data)
+                # Convert SRT back to CaptionSet for compatibility
+                srt_text = str(srt_subtitles).encode("utf8")
+                caption_set = Subtitle.parse(srt_text, Subtitle.Codec.SubRip)
             else:
                 raise ValueError(f'Unknown Subtitle format "{codec}"...')
         except pycaption.exceptions.CaptionReadSyntaxError as e:
@@ -660,10 +821,44 @@ class Subtitle(Track):
     def strip_hearing_impaired(self) -> None:
         """
         Strip captions for hearing impaired (SDH).
-        It uses SubtitleEdit if available, otherwise filter-subs.
+
+        The SDH stripping method is determined by the 'sdh_method' setting in config:
+        - 'auto' (default): Tries subby first, then SubtitleEdit, then filter-subs
+        - 'subby': Uses subby's SDHStripper
+        - 'subtitleedit': Uses SubtitleEdit when available
+        - 'filter-subs': Uses subtitle-filter library
         """
         if not self.path or not self.path.exists():
             raise ValueError("You must download the subtitle track first.")
+
+        # Check configuration for SDH stripping method
+        sdh_method = config.subtitle.get("sdh_method", "auto")
+
+        if sdh_method == "subby" and self.codec == Subtitle.Codec.SubRip:
+            # Use subby's SDHStripper directly on the file
+            stripper = SDHStripper()
+            stripped_srt, _ = stripper.from_file(str(self.path))
+            self.path.write_text(str(stripped_srt), encoding="utf8")
+            return
+        elif sdh_method == "subtitleedit" and binaries.SubtitleEdit:
+            # Force use of SubtitleEdit
+            pass  # Continue to SubtitleEdit section below
+        elif sdh_method == "filter-subs":
+            # Force use of filter-subs
+            sub = Subtitles(self.path)
+            sub.filter(rm_fonts=True, rm_ast=True, rm_music=True, rm_effects=True, rm_names=True, rm_author=True)
+            sub.save()
+            return
+        elif sdh_method == "auto":
+            # Try subby first for SRT files, then fall back
+            if self.codec == Subtitle.Codec.SubRip:
+                try:
+                    stripper = SDHStripper()
+                    stripped_srt, _ = stripper.from_file(str(self.path))
+                    self.path.write_text(str(stripped_srt), encoding="utf8")
+                    return
+                except Exception:
+                    pass  # Fall through to other methods
 
         if binaries.SubtitleEdit:
             if self.codec == Subtitle.Codec.SubStationAlphav4:

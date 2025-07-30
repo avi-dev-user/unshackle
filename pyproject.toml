@@ -57,6 +57,7 @@ dependencies = [
     "pyplayready>=0.6.0,<0.7",
     "httpx>=0.28.1,<0.29",
     "cryptography>=45.0.0",
+    "subby",
 ]
 
 [project.urls]
@@ -112,3 +113,4 @@ no_implicit_optional = true
 
 [tool.uv.sources]
 unshackle = { workspace = true }
+subby = { git = "https://github.com/vevv/subby.git" }
