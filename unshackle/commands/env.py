@@ -25,52 +25,127 @@ def env() -> None:
 @env.command()
 def check() -> None:
     """Checks environment for the required dependencies."""
-    table = Table(title="Dependencies", expand=True)
-    table.add_column("Name", no_wrap=True)
-    table.add_column("Required", justify="center")
-    table.add_column("Installed", justify="center")
-    table.add_column("Path", no_wrap=False, overflow="fold")
-
-    # Define all dependencies with their binary objects and required status
-    dependencies = [
-        {"name": "FFMpeg", "binary": binaries.FFMPEG, "required": True},
-        {"name": "FFProbe", "binary": binaries.FFProbe, "required": True},
-        {"name": "shaka-packager", "binary": binaries.ShakaPackager, "required": True},
-        {"name": "MKVToolNix", "binary": binaries.MKVToolNix, "required": True},
-        {"name": "Mkvpropedit", "binary": binaries.Mkvpropedit, "required": True},
-        {"name": "CCExtractor", "binary": binaries.CCExtractor, "required": False},
-        {"name": "FFPlay", "binary": binaries.FFPlay, "required": False},
-        {"name": "SubtitleEdit", "binary": binaries.SubtitleEdit, "required": False},
-        {"name": "Aria2(c)", "binary": binaries.Aria2, "required": False},
-        {"name": "HolaProxy", "binary": binaries.HolaProxy, "required": False},
-        {"name": "MPV", "binary": binaries.MPV, "required": False},
-        {"name": "Caddy", "binary": binaries.Caddy, "required": False},
-        {"name": "N_m3u8DL-RE", "binary": binaries.N_m3u8DL_RE, "required": False},
-        {"name": "dovi_tool", "binary": binaries.DoviTool, "required": False},
+    # Define all dependencies
+    all_deps = [
+        # Core Media Tools
+        {"name": "FFmpeg", "binary": binaries.FFMPEG, "required": True, "desc": "Media processing", "cat": "Core"},
+        {"name": "FFprobe", "binary": binaries.FFProbe, "required": True, "desc": "Media analysis", "cat": "Core"},
+        {"name": "MKVToolNix", "binary": binaries.MKVToolNix, "required": True, "desc": "MKV muxing", "cat": "Core"},
+        {
+            "name": "mkvpropedit",
+            "binary": binaries.Mkvpropedit,
+            "required": True,
+            "desc": "MKV metadata",
+            "cat": "Core",
+        },
+        {
+            "name": "shaka-packager",
+            "binary": binaries.ShakaPackager,
+            "required": True,
+            "desc": "DRM decryption",
+            "cat": "DRM",
+        },
+        # HDR Processing
+        {"name": "dovi_tool", "binary": binaries.DoviTool, "required": False, "desc": "Dolby Vision", "cat": "HDR"},
+        {
+            "name": "HDR10Plus_tool",
+            "binary": binaries.HDR10PlusTool,
+            "required": False,
+            "desc": "HDR10+ metadata",
+            "cat": "HDR",
+        },
+        # Downloaders
+        {"name": "aria2c", "binary": binaries.Aria2, "required": False, "desc": "Multi-thread DL", "cat": "Download"},
+        {
+            "name": "N_m3u8DL-RE",
+            "binary": binaries.N_m3u8DL_RE,
+            "required": False,
+            "desc": "HLS/DASH",
+            "cat": "Download",
+        },
+        # Subtitle Tools
+        {
+            "name": "SubtitleEdit",
+            "binary": binaries.SubtitleEdit,
+            "required": False,
+            "desc": "Sub conversion",
+            "cat": "Subtitle",
+        },
+        {
+            "name": "CCExtractor",
+            "binary": binaries.CCExtractor,
+            "required": False,
+            "desc": "CC extraction",
+            "cat": "Subtitle",
+        },
+        # Media Players
+        {"name": "FFplay", "binary": binaries.FFPlay, "required": False, "desc": "Simple player", "cat": "Player"},
+        {"name": "MPV", "binary": binaries.MPV, "required": False, "desc": "Advanced player", "cat": "Player"},
+        # Network Tools
+        {
+            "name": "HolaProxy",
+            "binary": binaries.HolaProxy,
+            "required": False,
+            "desc": "Proxy service",
+            "cat": "Network",
+        },
+        {"name": "Caddy", "binary": binaries.Caddy, "required": False, "desc": "Web server", "cat": "Network"},
     ]
 
-    for dep in dependencies:
+    # Track overall status
+    all_required_installed = True
+    total_installed = 0
+    total_required = 0
+    missing_required = []
+
+    # Create a single table
+    table = Table(
+        title="Environment Dependencies", title_style="bold", show_header=True, header_style="bold", expand=False
+    )
+    table.add_column("Category", style="bold cyan", width=10)
+    table.add_column("Tool", width=16)
+    table.add_column("Status", justify="center", width=10)
+    table.add_column("Req", justify="center", width=4)
+    table.add_column("Purpose", style="bright_black", width=20)
+
+    last_cat = None
+    for dep in all_deps:
         path = dep["binary"]
 
-        # Required column
-        if dep["required"]:
-            required = "[red]Yes[/red]"
-        else:
-            required = "No"
+        # Category column (only show when it changes)
+        category = dep["cat"] if dep["cat"] != last_cat else ""
+        last_cat = dep["cat"]
 
-        # Installed column
+        # Status
         if path:
-            installed = "[green]:heavy_check_mark:[/green]"
-            path_output = str(path)
+            status = "[green]✓[/green]"
+            total_installed += 1
         else:
-            installed = "[red]:x:[/red]"
-            path_output = "Not Found"
+            status = "[red]✗[/red]"
+            if dep["required"]:
+                all_required_installed = False
+                missing_required.append(dep["name"])
 
-        # Add to the table
-        table.add_row(dep["name"], required, installed, path_output)
+        if dep["required"]:
+            total_required += 1
 
-    # Display the result
-    console.print(Padding(table, (1, 5)))
+        # Required column (compact)
+        req = "[red]Y[/red]" if dep["required"] else "[bright_black]-[/bright_black]"
+
+        # Add row
+        table.add_row(category, dep["name"], status, req, dep["desc"])
+
+    console.print(Padding(table, (1, 2)))
+
+    # Compact summary
+    summary_parts = [f"[bold]Total:[/bold] {total_installed}/{len(all_deps)}"]
+
+    if all_required_installed:
+        summary_parts.append("[green]All required tools installed ✓[/green]")
+    else:
+        summary_parts.append(f"[red]Missing required: {', '.join(missing_required)}[/red]")
+
+    console.print(Padding("  ".join(summary_parts), (1, 2)))
 
 
 @env.command()
@@ -86,7 +161,7 @@ def info() -> None:
             tree.add(f"[repr.number]{i}.[/] [text2]{path.resolve()}[/]")
         console.print(Padding(tree, (0, 5)))
 
-    table = Table(title="Directories", expand=True)
+    table = Table(title="Directories", title_style="bold", expand=True)
     table.add_column("Name", no_wrap=True)
     table.add_column("Path", no_wrap=False, overflow="fold")
 
