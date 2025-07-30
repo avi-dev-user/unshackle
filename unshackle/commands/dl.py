@@ -58,15 +58,8 @@ from unshackle.core.tracks.attachment import Attachment
 from unshackle.core.tracks.hybrid import Hybrid
 from unshackle.core.utilities import get_system_fonts, is_close_match, time_elapsed_since
 from unshackle.core.utils import tags
-from unshackle.core.utils.click_types import (
-    LANGUAGE_RANGE,
-    QUALITY_LIST,
-    SEASON_RANGE,
-    ContextData,
-    MultipleChoice,
-    SubtitleCodecChoice,
-    VideoCodecChoice,
-)
+from unshackle.core.utils.click_types import (LANGUAGE_RANGE, QUALITY_LIST, SEASON_RANGE, ContextData, MultipleChoice,
+                                              SubtitleCodecChoice, VideoCodecChoice)
 from unshackle.core.utils.collections import merge_dict
 from unshackle.core.utils.subprocess import ffprobe
 from unshackle.core.vaults import Vaults
@@ -302,11 +295,41 @@ class dl:
 
         with console.status("Loading Key Vaults...", spinner="dots"):
             self.vaults = Vaults(self.service)
+            total_vaults = len(config.key_vaults)
+            failed_vaults = []
+
             for vault in config.key_vaults:
                 vault_type = vault["type"]
-                del vault["type"]
-                self.vaults.load(vault_type, **vault)
-            self.log.info(f"Loaded {len(self.vaults)} Vaults")
+                vault_name = vault.get("name", vault_type)
+                vault_copy = vault.copy()
+                del vault_copy["type"]
+
+                if vault_type.lower() == "sqlite":
+                    try:
+                        self.vaults.load_critical(vault_type, **vault_copy)
+                        self.log.debug(f"Successfully loaded vault: {vault_name} ({vault_type})")
+                    except Exception as e:
+                        self.log.error(f"vault failure: {vault_name} ({vault_type}) - {e}")
+                        raise
+                else:
+                    # Other vaults (MySQL, HTTP, API) - soft fail
+                    if not self.vaults.load(vault_type, **vault_copy):
+                        failed_vaults.append(vault_name)
+                        self.log.debug(f"Failed to load vault: {vault_name} ({vault_type})")
+                    else:
+                        self.log.debug(f"Successfully loaded vault: {vault_name} ({vault_type})")
+
+            loaded_count = len(self.vaults)
+            if failed_vaults:
+                self.log.warning(f"Failed to load {len(failed_vaults)} vault(s): {', '.join(failed_vaults)}")
+            self.log.info(f"Loaded {loaded_count}/{total_vaults} Vaults")
+
+            # Debug: Show detailed vault status
+            if loaded_count > 0:
+                vault_names = [vault.name for vault in self.vaults]
+                self.log.debug(f"Active vaults: {', '.join(vault_names)}")
+            else:
+                self.log.debug("No vaults are currently active")
 
         self.proxy_providers = []
         if no_proxy:

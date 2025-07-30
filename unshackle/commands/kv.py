@@ -46,7 +46,8 @@ def copy(to_vault: str, from_vaults: list[str], service: Optional[str] = None) -
         vault_type = vault["type"]
         vault_args = vault.copy()
         del vault_args["type"]
-        vaults.load(vault_type, **vault_args)
+        if not vaults.load(vault_type, **vault_args):
+            raise click.ClickException(f"Failed to load vault ({vault_name}).")
 
     to_vault: Vault = vaults.vaults[0]
     from_vaults: list[Vault] = vaults.vaults[1:]

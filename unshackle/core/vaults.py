@@ -25,8 +25,20 @@ class Vaults:
     def __len__(self) -> int:
         return len(self.vaults)
 
-    def load(self, type_: str, **kwargs: Any) -> None:
-        """Load a Vault into the vaults list."""
+    def load(self, type_: str, **kwargs: Any) -> bool:
+        """Load a Vault into the vaults list. Returns True if successful, False otherwise."""
+        module = _MODULES.get(type_)
+        if not module:
+            raise ValueError(f"Unable to find vault command by the name '{type_}'.")
+        try:
+            vault = module(**kwargs)
+            self.vaults.append(vault)
+            return True
+        except Exception:
+            return False
+
+    def load_critical(self, type_: str, **kwargs: Any) -> None:
+        """Load a critical Vault that must succeed or raise an exception."""
         module = _MODULES.get(type_)
         if not module:
             raise ValueError(f"Unable to find vault command by the name '{type_}'.")
