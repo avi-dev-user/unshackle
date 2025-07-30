@@ -907,32 +907,53 @@ class dl:
 
                     # Check if we're in hybrid mode
                     if any(r == Video.Range.HYBRID for r in range_) and title.tracks.videos:
-                        # Hybrid mode: process DV and HDR10 tracks together
+                        # Hybrid mode: process DV and HDR10 tracks separately for each resolution
                         self.log.info("Processing Hybrid HDR10+DV tracks...")
 
-                        # Run the hybrid processing
-                        Hybrid(title.tracks.videos, self.service)
+                        # Group video tracks by resolution
+                        resolutions_processed = set()
+                        hdr10_tracks = [v for v in title.tracks.videos if v.range == Video.Range.HDR10]
+                        dv_tracks = [v for v in title.tracks.videos if v.range == Video.Range.DV]
 
-                        # After hybrid processing, the output file should be in temp directory
-                        hybrid_output_path = config.directories.temp / "HDR10-DV.hevc"
+                        for hdr10_track in hdr10_tracks:
+                            resolution = hdr10_track.height
+                            if resolution in resolutions_processed:
+                                continue
+                            resolutions_processed.add(resolution)
 
-                        # Create a single mux task for the hybrid output
-                        task_description = "Multiplexing Hybrid HDR10+DV"
-                        task_id = progress.add_task(f"{task_description}...", total=None, start=False)
+                            # Find matching DV track for this resolution (use the lowest DV resolution)
+                            matching_dv = min(dv_tracks, key=lambda v: v.height) if dv_tracks else None
 
-                        # Create tracks with the hybrid video output
-                        task_tracks = Tracks(title.tracks) + title.tracks.chapters + title.tracks.attachments
+                            if matching_dv:
+                                # Create track pair for this resolution
+                                resolution_tracks = [hdr10_track, matching_dv]
 
-                        # Create a new video track for the hybrid output
-                        # Use the HDR10 track as a template but update its path
-                        hdr10_track = next((v for v in title.tracks.videos if v.range == Video.Range.HDR10), None)
-                        if hdr10_track:
-                            hybrid_track = deepcopy(hdr10_track)
-                            hybrid_track.path = hybrid_output_path
-                            hybrid_track.range = Video.Range.DV  # It's now a DV track
-                            task_tracks.videos = [hybrid_track]
+                                # Run the hybrid processing for this resolution
+                                Hybrid(resolution_tracks, self.service)
 
-                        multiplex_tasks.append((task_id, task_tracks))
+                                # Create unique output filename for this resolution
+                                hybrid_filename = f"HDR10-DV-{resolution}p.hevc"
+                                hybrid_output_path = config.directories.temp / hybrid_filename
+
+                                # The Hybrid class creates HDR10-DV.hevc, rename it for this resolution
+                                default_output = config.directories.temp / "HDR10-DV.hevc"
+                                if default_output.exists():
+                                    shutil.move(str(default_output), str(hybrid_output_path))
+
+                                # Create a mux task for this resolution
+                                task_description = f"Multiplexing Hybrid HDR10+DV {resolution}p"
+                                task_id = progress.add_task(f"{task_description}...", total=None, start=False)
+
+                                # Create tracks with the hybrid video output for this resolution
+                                task_tracks = Tracks(title.tracks) + title.tracks.chapters + title.tracks.attachments
+
+                                # Create a new video track for the hybrid output
+                                hybrid_track = deepcopy(hdr10_track)
+                                hybrid_track.path = hybrid_output_path
+                                hybrid_track.range = Video.Range.DV  # It's now a DV track
+                                task_tracks.videos = [hybrid_track]
+
+                                multiplex_tasks.append((task_id, task_tracks))
                     else:
                         # Normal mode: process each video track separately
                         for video_track in title.tracks.videos or [None]:
