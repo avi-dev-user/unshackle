@@ -129,6 +129,15 @@ filenames:
 # API key for The Movie Database (TMDB)
 tmdb_api_key: ""
 
+# conversion_method:
+# - auto (default): Smart routing - subby for WebVTT/SAMI, standard for others
+# - subby: Always use subby with advanced processing
+# - pycaption: Use only pycaption library (no SubtitleEdit, no subby)
+# - subtitleedit: Prefer SubtitleEdit when available, fall back to pycaption
+subtitle:
+  conversion_method: auto
+  sdh_method: auto
+
 # Configuration for pywidevine's serve functionality
 serve:
   users:
