@@ -76,6 +76,11 @@ def download(url: str, save_path: Path, session: Session, **kwargs: Any) -> Gene
 
                 try:
                     content_length = int(stream.headers.get("Content-Length", "0"))
+
+                    # Skip Content-Length validation for compressed responses since
+                    # curl_impersonate automatically decompresses but Content-Length shows compressed size
+                    if stream.headers.get("Content-Encoding", "").lower() in ["gzip", "deflate", "br"]:
+                        content_length = 0
                 except ValueError:
                     content_length = 0
 
