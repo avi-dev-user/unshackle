@@ -7,6 +7,9 @@ set_terminal_bg: false
 # Check for updates from GitHub repository on startup (default: true)
 update_checks: true
 
+# How often to check for updates, in hours (default: 24)
+update_check_interval: 24
+
 # Muxing configuration
 muxing:
   set_title: false

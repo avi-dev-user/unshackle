@@ -79,6 +79,7 @@ class Config:
         self.tag: str = kwargs.get("tag") or ""
         self.tmdb_api_key: str = kwargs.get("tmdb_api_key") or ""
         self.update_checks: bool = kwargs.get("update_checks", True)
+        self.update_check_interval: int = kwargs.get("update_check_interval", 24)
 
     @classmethod
     def from_yaml(cls, path: Path) -> Config:
