@@ -62,6 +62,7 @@ class Attachment:
                 session = session or requests.Session()
                 response = session.get(url, stream=True)
                 response.raise_for_status()
+                config.directories.temp.mkdir(parents=True, exist_ok=True)
                 download_path.parent.mkdir(parents=True, exist_ok=True)
 
                 with open(download_path, "wb") as f:
