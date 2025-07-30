@@ -254,6 +254,31 @@ class Tracks:
     def select_subtitles(self, x: Callable[[Subtitle], bool]) -> None:
         self.subtitles = list(filter(x, self.subtitles))
 
+    def select_hybrid(self, tracks, quality):
+        hdr10_tracks = [
+            v
+            for v in tracks
+            if v.range == Video.Range.HDR10 and (v.height in quality or int(v.width * 9 / 16) in quality)
+        ]
+        hdr10 = []
+        for res in quality:
+            candidates = [v for v in hdr10_tracks if v.height == res or int(v.width * 9 / 16) == res]
+            if candidates:
+                best = max(candidates, key=lambda v: v.bitrate)  # assumes .bitrate exists
+                hdr10.append(best)
+
+        dv_tracks = [v for v in tracks if v.range == Video.Range.DV]
+        lowest_dv = min(dv_tracks, key=lambda v: v.height) if dv_tracks else None
+
+        def select(x):
+            if x in hdr10:
+                return True
+            if lowest_dv and x is lowest_dv:
+                return True
+            return False
+
+        return select
+
     def by_resolutions(self, resolutions: list[int], per_resolution: int = 0) -> None:
         # Note: Do not merge these list comprehensions. They must be done separately so the results
         # from the 16:9 canvas check is only used if there's no exact height resolution match.

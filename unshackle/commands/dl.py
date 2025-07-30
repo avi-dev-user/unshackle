@@ -55,6 +55,7 @@ from unshackle.core.titles import Movie, Movies, Series, Song, Title_T
 from unshackle.core.titles.episode import Episode
 from unshackle.core.tracks import Audio, Subtitle, Tracks, Video
 from unshackle.core.tracks.attachment import Attachment
+from unshackle.core.tracks.hybrid import Hybrid
 from unshackle.core.utilities import get_system_fonts, is_close_match, time_elapsed_since
 from unshackle.core.utils import tags
 from unshackle.core.utils.click_types import (LANGUAGE_RANGE, QUALITY_LIST, SEASON_RANGE, ContextData, MultipleChoice,
@@ -399,6 +400,14 @@ class dl:
         self.tmdb_searched = False
         start_time = time.time()
 
+        # Check if dovi_tool is available when hybrid mode is requested
+        if any(r == Video.Range.HYBRID for r in range_):
+            from unshackle.core.binaries import DoviTool
+            if not DoviTool:
+                self.log.error("Unable to run hybrid mode: dovi_tool not detected")
+                self.log.error("Please install dovi_tool from https://github.com/quietvoid/dovi_tool")
+                sys.exit(1)
+
         if cdm_only is None:
             vaults_only = None
         else:
@@ -539,10 +548,12 @@ class dl:
                             sys.exit(1)
 
                     if range_:
-                        title.tracks.select_video(lambda x: x.range in range_)
-                        missing_ranges = [r for r in range_ if not any(x.range == r for x in title.tracks.videos)]
-                        for color_range in missing_ranges:
-                            self.log.warning(f"Skipping {color_range.name} video tracks as none are available.")
+                        # Special handling for HYBRID - don't filter, keep all HDR10 and DV tracks
+                        if Video.Range.HYBRID not in range_:
+                            title.tracks.select_video(lambda x: x.range in range_)
+                            missing_ranges = [r for r in range_ if not any(x.range == r for x in title.tracks.videos)]
+                            for color_range in missing_ranges:
+                                self.log.warning(f"Skipping {color_range.name} video tracks as none are available.")
 
                     if vbitrate:
                         title.tracks.select_video(lambda x: x.bitrate and x.bitrate // 1000 == vbitrate)
@@ -559,38 +570,60 @@ class dl:
                             sys.exit(1)
 
                     if quality:
-                        title.tracks.by_resolutions(quality)
                         missing_resolutions = []
-                        for resolution in quality:
-                            if any(video.height == resolution for video in title.tracks.videos):
-                                continue
-                            if any(int(video.width * (9 / 16)) == resolution for video in title.tracks.videos):
-                                continue
-                            missing_resolutions.append(resolution)
+                        if any(r == Video.Range.HYBRID for r in range_):
+                            title.tracks.select_video(title.tracks.select_hybrid(title.tracks.videos, quality))
+                        else:
+                            title.tracks.by_resolutions(quality)
+
+                            for resolution in quality:
+                                if any(v.height == resolution for v in title.tracks.videos):
+                                    continue
+                                if any(int(v.width * 9 / 16) == resolution for v in title.tracks.videos):
+                                    continue
+                                missing_resolutions.append(resolution)
+
                         if missing_resolutions:
                             res_list = ""
                             if len(missing_resolutions) > 1:
-                                res_list = (", ".join([f"{x}p" for x in missing_resolutions[:-1]])) + " or "
+                                res_list = ", ".join([f"{x}p" for x in missing_resolutions[:-1]]) + " or "
                             res_list = f"{res_list}{missing_resolutions[-1]}p"
                             plural = "s" if len(missing_resolutions) > 1 else ""
                             self.log.error(f"There's no {res_list} Video Track{plural}...")
                             sys.exit(1)
 
                     # choose best track by range and quality
-                    selected_videos: list[Video] = []
-                    for resolution, color_range in product(quality or [None], range_ or [None]):
-                        match = next(
-                            (
-                                t
-                                for t in title.tracks.videos
-                                if (not resolution or t.height == resolution or int(t.width * (9 / 16)) == resolution)
-                                and (not color_range or t.range == color_range)
-                            ),
-                            None,
-                        )
-                        if match and match not in selected_videos:
-                            selected_videos.append(match)
-                    title.tracks.videos = selected_videos
+                    if any(r == Video.Range.HYBRID for r in range_):
+                        # For hybrid mode, always apply hybrid selection
+                        # If no quality specified, use only the best (highest) resolution
+                        if not quality:
+                            # Get the highest resolution available
+                            best_resolution = max((v.height for v in title.tracks.videos), default=None)
+                            if best_resolution:
+                                # Use the hybrid selection logic with only the best resolution
+                                title.tracks.select_video(
+                                    title.tracks.select_hybrid(title.tracks.videos, [best_resolution])
+                                )
+                        # If quality was specified, hybrid selection was already applied above
+                    else:
+                        selected_videos: list[Video] = []
+                        for resolution, color_range in product(quality or [None], range_ or [None]):
+                            match = next(
+                                (
+                                    t
+                                    for t in title.tracks.videos
+                                    if (
+                                        not resolution
+                                        or t.height == resolution
+                                        or int(t.width * (9 / 16)) == resolution
+                                    )
+                                    and (not color_range or t.range == color_range)
+                                ),
+                                None,
+                            )
+                            if match and match not in selected_videos:
+                                selected_videos.append(match)
+                        title.tracks.videos = selected_videos
 
                     # filter subtitle tracks
                     if s_lang and "all" not in s_lang:
@@ -871,21 +904,52 @@ class dl:
                     )
 
                     multiplex_tasks: list[tuple[TaskID, Tracks]] = []
-                    for video_track in title.tracks.videos or [None]:
-                        task_description = "Multiplexing"
-                        if video_track:
-                            if len(quality) > 1:
-                                task_description += f" {video_track.height}p"
-                            if len(range_) > 1:
-                                task_description += f" {video_track.range.name}"
 
+                    # Check if we're in hybrid mode
+                    if any(r == Video.Range.HYBRID for r in range_) and title.tracks.videos:
+                        # Hybrid mode: process DV and HDR10 tracks together
+                        self.log.info("Processing Hybrid HDR10+DV tracks...")
+
+                        # Run the hybrid processing
+                        Hybrid(title.tracks.videos, self.service)
+
+                        # After hybrid processing, the output file should be in temp directory
+                        hybrid_output_path = config.directories.temp / "HDR10-DV.hevc"
+
+                        # Create a single mux task for the hybrid output
+                        task_description = "Multiplexing Hybrid HDR10+DV"
                         task_id = progress.add_task(f"{task_description}...", total=None, start=False)
 
+                        # Create tracks with the hybrid video output
                         task_tracks = Tracks(title.tracks) + title.tracks.chapters + title.tracks.attachments
-                        if video_track:
-                            task_tracks.videos = [video_track]
+
+                        # Create a new video track for the hybrid output
+                        # Use the HDR10 track as a template but update its path
+                        hdr10_track = next((v for v in title.tracks.videos if v.range == Video.Range.HDR10), None)
+                        if hdr10_track:
+                            hybrid_track = deepcopy(hdr10_track)
+                            hybrid_track.path = hybrid_output_path
+                            hybrid_track.range = Video.Range.DV  # It's now a DV track
+                            task_tracks.videos = [hybrid_track]
 
                         multiplex_tasks.append((task_id, task_tracks))
+                    else:
+                        # Normal mode: process each video track separately
+                        for video_track in title.tracks.videos or [None]:
+                            task_description = "Multiplexing"
+                            if video_track:
+                                if len(quality) > 1:
+                                    task_description += f" {video_track.height}p"
+                                if len(range_) > 1:
+                                    task_description += f" {video_track.range.name}"
+
+                            task_id = progress.add_task(f"{task_description}...", total=None, start=False)
+
+                            task_tracks = Tracks(title.tracks) + title.tracks.chapters + title.tracks.attachments
+                            if video_track:
+                                task_tracks.videos = [video_track]
+
+                            multiplex_tasks.append((task_id, task_tracks))
 
                     with Live(Padding(progress, (0, 5, 1, 5)), console=console):
                         for task_id, task_tracks in multiplex_tasks:

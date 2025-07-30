@@ -94,6 +94,7 @@ class Video(Track):
         HDR10 = "HDR10"  # https://en.wikipedia.org/wiki/HDR10
         HDR10P = "HDR10+"  # https://en.wikipedia.org/wiki/HDR10%2B
         DV = "DV"  # https://en.wikipedia.org/wiki/Dolby_Vision
+        HYBRID = "HYBRID"  # Selects both HDR10 and DV tracks for hybrid processing with DoviTool
 
         @staticmethod
         def from_cicp(primaries: int, transfer: int, matrix: int) -> Video.Range:
