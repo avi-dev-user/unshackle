@@ -237,6 +237,8 @@ class Video(Track):
         except Exception as e:
             raise ValueError("Expected fps to be a number, float, or a string as numerator/denominator form, " + str(e))
 
+        self.needs_duration_fix = False
+
     def __str__(self) -> str:
         return " | ".join(
             filter(

@@ -331,21 +331,31 @@ class Tracks:
             if not vt.path or not vt.path.exists():
                 raise ValueError("Video Track must be downloaded before muxing...")
             events.emit(events.Types.TRACK_MULTIPLEX, track=vt)
-            cl.extend(
-                [
-                    "--language",
-                    f"0:{vt.language}",
-                    "--default-track",
-                    f"0:{i == 0}",
-                    "--original-flag",
-                    f"0:{vt.is_original_lang}",
-                    "--compression",
-                    "0:none",  # disable extra compression
-                    "(",
-                    str(vt.path),
-                    ")",
-                ]
-            )
+
+            # Prepare base arguments
+            video_args = [
+                "--language",
+                f"0:{vt.language}",
+                "--default-track",
+                f"0:{i == 0}",
+                "--original-flag",
+                f"0:{vt.is_original_lang}",
+                "--compression",
+                "0:none",  # disable extra compression
+            ]
+
+            # Add FPS fix if needed (typically for hybrid mode to prevent sync issues)
+            if hasattr(vt, "needs_duration_fix") and vt.needs_duration_fix and vt.fps:
+                video_args.extend(
+                    [
+                        "--default-duration",
+                        f"0:{vt.fps}fps" if isinstance(vt.fps, str) else f"0:{vt.fps:.3f}fps",
+                        "--fix-bitstream-timing-information",
+                        "0:1",
+                    ]
+                )
+
+            cl.extend(video_args + ["(", str(vt.path), ")"])
 
         for i, at in enumerate(self.audio):
             if not at.path or not at.path.exists():

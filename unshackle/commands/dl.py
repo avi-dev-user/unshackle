@@ -959,6 +959,9 @@ class dl:
                                 # Create track pair for this resolution
                                 resolution_tracks = [hdr10_track, matching_dv]
 
+                                for track in resolution_tracks:
+                                    track.needs_duration_fix = True
+
                                 # Run the hybrid processing for this resolution
                                 Hybrid(resolution_tracks, self.service)
 
@@ -982,6 +985,7 @@ class dl:
                                 hybrid_track = deepcopy(hdr10_track)
                                 hybrid_track.path = hybrid_output_path
                                 hybrid_track.range = Video.Range.DV  # It's now a DV track
+                                hybrid_track.needs_duration_fix = True
                                 task_tracks.videos = [hybrid_track]
 
                                 multiplex_tasks.append((task_id, task_tracks))
