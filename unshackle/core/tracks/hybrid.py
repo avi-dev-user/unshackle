@@ -30,7 +30,11 @@ class Hybrid:
         self.hdr_type = "HDR10"
         self.hevc_file = f"{self.hdr_type}-DV.hevc"
 
-        console.print(Padding(Rule("[rule.text]HDR10+DV Hybrid"), (1, 2)))
+        # Get resolution info from HDR10 track for display
+        hdr10_track = next((v for v in videos if v.range == Video.Range.HDR10), None)
+        self.resolution = f"{hdr10_track.height}p" if hdr10_track and hdr10_track.height else "Unknown"
+
+        console.print(Padding(Rule(f"[rule.text]HDR10+DV Hybrid ({self.resolution})"), (1, 2)))
 
         for video in self.videos:
             if not video.path or not os.path.exists(video.path):
@@ -55,7 +59,6 @@ class Hybrid:
                 self.extract_stream(save_path, "HDR10")
             elif video.range == Video.Range.DV:
                 self.extract_stream(save_path, "DV")
-                # self.extract_dv_stream(video, save_path)
 
         self.extract_rpu([video for video in videos if video.range == Video.Range.DV][0])
         if os.path.isfile(config.directories.temp / "RPU_UNT.bin"):
@@ -105,142 +108,6 @@ class Hybrid:
             output.unlink(missing_ok=True)
             self.log.error(f"x Failed extracting {type_} stream")
             sys.exit(1)
-
-    def ffmpeg_task(self, save_path, output, task_id):
-        p = subprocess.Popen(
-            [
-                "ffmpeg",
-                "-nostdin",
-                "-i",
-                str(save_path),
-                "-c:v",
-                "copy",
-                str(output),
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            bufsize=1,
-            universal_newlines=True,
-        )
-
-        self.progress.start_task(task_id)
-
-        for line in p.stderr:
-            if "frame=" in line:
-                self.progress.update(task_id, advance=0)
-        p.wait()
-
-        return p.returncode
-
-    def extract_hdr10_stream(self, video, save_path):
-        type_ = "HDR10"
-        if os.path.isfile(Path(config.directories.temp / f"{type_}.hevc")):
-            return
-        if self.source == "itunes" or self.source == "appletvplus":
-            self.log.info("+ Muxing HDR10 stream for fixing MP4 file")
-            subprocess.run(
-                [
-                    "mkvmerge",
-                    "-o",
-                    Path(config.directories.temp / "hdr10.mkv"),
-                    save_path,
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            self.log.info(f"+ Extracting {type_} stream")
-            extract_stream = subprocess.run(
-                [
-                    "ffmpeg",
-                    "-nostdin",
-                    "-stats",
-                    "-i",
-                    Path(config.directories.temp / "hdr10.mkv"),
-                    "-c:v",
-                    "copy",
-                    Path(config.directories.temp / f"{type_}.hevc"),
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            if extract_stream.returncode:
-                Path.unlink(Path(config.directories.temp / f"{type_}.hevc"))
-                self.log.error(f"x Failed extracting {type_} stream")
-                sys.exit(1)
-        else:
-            extract_stream = subprocess.run(
-                [
-                    "ffmpeg",
-                    "-nostdin",
-                    "-stats",
-                    "-i",
-                    save_path,
-                    "-c:v",
-                    "copy",
-                    Path(config.directories.temp / f"{type_}.hevc"),
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            if extract_stream.returncode:
-                Path.unlink(Path(config.directories.temp / f"{type_}.hevc"))
-                self.log.error(f"x Failed extracting {type_} stream")
-                sys.exit(1)
-
-    def extract_dv_stream(self, video, save_path):
-        type_ = "DV"
-        if os.path.isfile(Path(config.directories.temp / f"{type_}.hevc")):
-            return
-        if self.source == "itunes" or self.source == "appletvplus":
-            self.log.info("+ Muxing Dolby Vision stream for fixing MP4 file")
-            subprocess.run(
-                [
-                    "mkvmerge",
-                    "-o",
-                    Path(config.directories.temp / "dv.mkv"),
-                    save_path,
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            self.log.info("+ Extracting Dolby Vision stream")
-            extract_stream = subprocess.run(
-                [
-                    "ffmpeg",
-                    "-nostdin",
-                    "-stats",
-                    "-i",
-                    Path(config.directories.temp / "dv.mkv"),
-                    "-an",
-                    "-c:v",
-                    "copy",
-                    "-f",
-                    "hevc",
-                    Path(config.directories.temp / "out_1.h265"),
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            if extract_stream.returncode:
-                Path.unlink(Path(config.directories.temp / f"{type_}.hevc"))
-                self.log.error(f"x Failed extracting {type_} stream")
-                sys.exit(1)
-        else:
-            extract_stream = subprocess.run(
-                [
-                    "mp4demuxer",
-                    "--input-file",
-                    save_path,
-                    "--output-folder",
-                    Path(config.directories.temp),
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            if extract_stream.returncode:
-                Path.unlink(Path(config.directories.temp / f"{type_}.hevc"))
-                self.log.error(f"x Failed extracting {type_} stream")
-                sys.exit(1)
 
     def extract_rpu(self, video, untouched=False):
         if os.path.isfile(config.directories.temp / "RPU.bin") or os.path.isfile(
@@ -314,34 +181,6 @@ class Hybrid:
 
             # Update rpu_file to use the edited version
             self.rpu_file = "RPU_L6.bin"
-
-    def mode_3(self):
-        """Convert RPU to Mode 3"""
-        with open(config.directories.temp / "M3.json", "w+") as mode3_file:
-            json.dump({"mode": 3}, mode3_file, indent=3)
-
-        if not os.path.isfile(config.directories.temp / "RPU_M3.bin"):
-            self.log.info("+ Converting RPU to Mode 3")
-            mode3 = subprocess.run(
-                [
-                    str(DoviTool),
-                    "editor",
-                    "-i",
-                    config.directories.temp / self.rpu_file,
-                    "-j",
-                    config.directories.temp / "M3.json",
-                    "-o",
-                    config.directories.temp / "RPU_M3.bin",
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-
-            if mode3.returncode:
-                Path.unlink(config.directories.temp / "RPU_M3.bin")
-                self.log.exit("x Failed converting RPU to Mode 3")
-
-        self.rpu_file = "RPU_M3.bin"
 
     def injecting(self):
         if os.path.isfile(config.directories.temp / self.hevc_file):

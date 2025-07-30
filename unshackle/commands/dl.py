@@ -58,8 +58,15 @@ from unshackle.core.tracks.attachment import Attachment
 from unshackle.core.tracks.hybrid import Hybrid
 from unshackle.core.utilities import get_system_fonts, is_close_match, time_elapsed_since
 from unshackle.core.utils import tags
-from unshackle.core.utils.click_types import (LANGUAGE_RANGE, QUALITY_LIST, SEASON_RANGE, ContextData, MultipleChoice,
-                                              SubtitleCodecChoice, VideoCodecChoice)
+from unshackle.core.utils.click_types import (
+    LANGUAGE_RANGE,
+    QUALITY_LIST,
+    SEASON_RANGE,
+    ContextData,
+    MultipleChoice,
+    SubtitleCodecChoice,
+    VideoCodecChoice,
+)
 from unshackle.core.utils.collections import merge_dict
 from unshackle.core.utils.subprocess import ffprobe
 from unshackle.core.vaults import Vaults
@@ -403,6 +410,7 @@ class dl:
         # Check if dovi_tool is available when hybrid mode is requested
         if any(r == Video.Range.HYBRID for r in range_):
             from unshackle.core.binaries import DoviTool
+
             if not DoviTool:
                 self.log.error("Unable to run hybrid mode: dovi_tool not detected")
                 self.log.error("Please install dovi_tool from https://github.com/quietvoid/dovi_tool")
@@ -954,6 +962,8 @@ class dl:
                                 task_tracks.videos = [hybrid_track]
 
                                 multiplex_tasks.append((task_id, task_tracks))
+
+                        console.print()
                     else:
                         # Normal mode: process each video track separately
                         for video_track in title.tracks.videos or [None]:
