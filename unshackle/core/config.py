@@ -78,6 +78,7 @@ class Config:
         self.set_terminal_bg: bool = kwargs.get("set_terminal_bg", False)
         self.tag: str = kwargs.get("tag") or ""
         self.tmdb_api_key: str = kwargs.get("tmdb_api_key") or ""
+        self.update_checks: bool = kwargs.get("update_checks", True)
 
     @classmethod
     def from_yaml(cls, path: Path) -> Config:

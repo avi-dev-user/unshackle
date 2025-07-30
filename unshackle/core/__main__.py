@@ -15,6 +15,7 @@ from unshackle.core.commands import Commands
 from unshackle.core.config import config
 from unshackle.core.console import ComfyRichHandler, console
 from unshackle.core.constants import context_settings
+from unshackle.core.update_checker import UpdateChecker
 from unshackle.core.utilities import rotate_log_file
 
 LOGGING_PATH = None
@@ -78,6 +79,22 @@ def main(version: bool, debug: bool, log_path: Path) -> None:
 
     if version:
         return
+
+    if config.update_checks:
+        try:
+            latest_version = UpdateChecker.check_for_updates_sync(__version__)
+            if latest_version:
+                console.print(
+                    f"\n[yellow]⚠️  Update available![/yellow] "
+                    f"Current: {__version__} → Latest: [green]{latest_version}[/green]",
+                    justify="center",
+                )
+                console.print(
+                    "Visit: https://github.com/unshackle-dl/unshackle/releases/latest\n",
+                    justify="center",
+                )
+        except Exception:
+            pass
 
 
 @atexit.register

@@ -4,6 +4,9 @@ tag: user_tag
 # Set terminal background color (custom option not in CONFIG.md)
 set_terminal_bg: false
 
+# Check for updates from GitHub repository on startup (default: true)
+update_checks: true
+
 # Muxing configuration
 muxing:
   set_title: false

@@ -60,7 +60,7 @@ def check() -> None:
             "name": "N_m3u8DL-RE",
             "binary": binaries.N_m3u8DL_RE,
             "required": False,
-            "desc": "HLS/DASH",
+            "desc": "HLS/DASH/ISM",
             "cat": "Download",
         },
         # Subtitle Tools

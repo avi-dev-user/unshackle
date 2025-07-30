@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2025-07-30
+
+### Added
+
+- **Update Checker**: Automatic GitHub release version checking on startup
+  - Configurable update notifications via `update_checks` setting in unshackle.yaml
+  - Non-blocking HTTP requests with 5-second timeout for performance
+  - Smart semantic version comparison supporting all version formats (x.y.z, x.y, x)
+  - Graceful error handling for network issues and API failures
+  - User-friendly update notifications with current → latest version display
+  - Direct links to GitHub releases page for easy updates
+- **HDR10+ Support**: Enhanced HDR10+ metadata processing for hybrid tracks
+  - HDR10+ tool binary support (`hdr10plus_tool`) added to binaries module
+  - HDR10+ to Dolby Vision conversion capabilities in hybrid processing
+  - Enhanced metadata extraction for HDR10+ content
+- **Duration Fix Handling**: Added duration correction for video and hybrid tracks
+- **Temporary Directory Management**: Automatic creation of temp directories for attachment downloads
+
+### Changed
+
+- Enhanced configuration system with new `update_checks` boolean option (defaults to true)
+- Updated sample unshackle.yaml with update checker configuration documentation
+- Improved console styling consistency using `bright_black` for dimmed text
+- **Environment Dependency Check**: Complete overhaul with detailed categorization and status summary
+  - Organized dependencies by category (Core, HDR, Download, Subtitle, Player, Network)
+  - Enhanced status reporting with compact summary display
+  - Improved tool requirement tracking and missing dependency alerts
+- **Hybrid Track Processing**: Significant improvements to HDR10+ and Dolby Vision handling
+  - Enhanced metadata extraction and processing workflows
+  - Better integration with HDR processing tools
+
+### Removed
+
+- **Docker Workflow**: Removed Docker build and publish GitHub Actions workflow for manual builds
+
 ## [1.1.0] - 2025-07-29
 
 ### Added
