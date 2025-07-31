@@ -43,7 +43,7 @@ class Hybrid:
 
         for video in self.videos:
             if not video.path or not os.path.exists(video.path):
-                self.log.exit(f" - Video track {video.id} was not downloaded before injection.")
+                raise ValueError(f"Video track {video.id} was not downloaded before injection.")
 
         # Check if we have DV track available
         has_dv = any(video.range == Video.Range.DV for video in self.videos)
@@ -51,14 +51,14 @@ class Hybrid:
         has_hdr10p = any(video.range == Video.Range.HDR10P for video in self.videos)
 
         if not has_hdr10:
-            self.log.exit(" - No HDR10 track available for hybrid processing.")
+            raise ValueError("No HDR10 track available for hybrid processing.")
 
         # If we have HDR10+ but no DV, we can convert HDR10+ to DV
         if not has_dv and has_hdr10p:
             self.log.info("✓ No DV track found, but HDR10+ is available. Will convert HDR10+ to DV.")
             self.hdr10plus_to_dv = True
         elif not has_dv:
-            self.log.exit(" - No DV track available and no HDR10+ to convert.")
+            raise ValueError("No DV track available and no HDR10+ to convert.")
 
         if os.path.isfile(config.directories.temp / self.hevc_file):
             self.log.info("✓ Already Injected")
@@ -68,7 +68,7 @@ class Hybrid:
             # Use the actual path from the video track
             save_path = video.path
             if not save_path or not os.path.exists(save_path):
-                self.log.exit(f" - Video track {video.id} was not downloaded or path not found: {save_path}")
+                raise ValueError(f"Video track {video.id} was not downloaded or path not found: {save_path}")
 
             if video.range == Video.Range.HDR10:
                 self.extract_stream(save_path, "HDR10")
@@ -164,9 +164,9 @@ class Hybrid:
             if b"MAX_PQ_LUMINANCE" in rpu_extraction.stderr:
                 self.extract_rpu(video, untouched=True)
             elif b"Invalid PPS index" in rpu_extraction.stderr:
-                self.log.exit("x Dolby Vision VideoTrack seems to be corrupt")
+                raise ValueError("Dolby Vision VideoTrack seems to be corrupt")
             else:
-                self.log.exit(f"x Failed extracting{' untouched ' if untouched else ' '}RPU from Dolby Vision stream")
+                raise ValueError(f"Failed extracting{' untouched ' if untouched else ' '}RPU from Dolby Vision stream")
 
     def level_6(self):
         """Edit RPU Level 6 values"""
@@ -203,7 +203,7 @@ class Hybrid:
 
             if level6.returncode:
                 Path.unlink(config.directories.temp / "RPU_L6.bin")
-                self.log.exit("x Failed editing RPU Level 6 values")
+                raise ValueError("Failed editing RPU Level 6 values")
 
             # Update rpu_file to use the edited version
             self.rpu_file = "RPU_L6.bin"
@@ -239,7 +239,7 @@ class Hybrid:
 
         if inject.returncode:
             Path.unlink(config.directories.temp / self.hevc_file)
-            self.log.exit("x Failed injecting Dolby Vision metadata into HDR10 stream")
+            raise ValueError("Failed injecting Dolby Vision metadata into HDR10 stream")
 
     def extract_hdr10plus(self, _video):
         """Extract HDR10+ metadata from the video stream"""
@@ -247,7 +247,7 @@ class Hybrid:
             return
 
         if not HDR10PlusTool:
-            self.log.exit("x HDR10Plus_tool not found. Please install it to use HDR10+ to DV conversion.")
+            raise ValueError("HDR10Plus_tool not found. Please install it to use HDR10+ to DV conversion.")
 
         self.log.info("+ Extracting HDR10+ metadata")
 
@@ -265,11 +265,11 @@ class Hybrid:
         )
 
         if extraction.returncode:
-            self.log.exit("x Failed extracting HDR10+ metadata")
+            raise ValueError("Failed extracting HDR10+ metadata")
 
         # Check if the extracted file has content
         if os.path.getsize(config.directories.temp / self.hdr10plus_file) == 0:
-            self.log.exit("x No HDR10+ metadata found in the stream")
+            raise ValueError("No HDR10+ metadata found in the stream")
 
     def convert_hdr10plus_to_dv(self):
         """Convert HDR10+ metadata to Dolby Vision RPU"""
@@ -310,7 +310,7 @@ class Hybrid:
         )
 
         if conversion.returncode:
-            self.log.exit("x Failed converting HDR10+ to Dolby Vision")
+            raise ValueError("Failed converting HDR10+ to Dolby Vision")
 
         self.log.info("✓ HDR10+ successfully converted to Dolby Vision Profile 8")
 
