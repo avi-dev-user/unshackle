@@ -765,7 +765,8 @@ class dl:
                 DOWNLOAD_LICENCE_ONLY.set()
 
             try:
-                with Live(Padding(download_table, (1, 5)), console=console, refresh_per_second=5):
+                # Use transient mode to prevent display remnants
+                with Live(Padding(download_table, (1, 5)), console=console, refresh_per_second=5, transient=True):
                     with ThreadPoolExecutor(downloads) as pool:
                         for download in futures.as_completed(
                             (
@@ -1009,7 +1010,7 @@ class dl:
 
                             multiplex_tasks.append((task_id, task_tracks))
 
-                    with Live(Padding(progress, (0, 5, 1, 5)), console=console):
+                    with Live(Padding(progress, (0, 5, 1, 5)), console=console, transient=True):
                         for task_id, task_tracks in multiplex_tasks:
                             progress.start_task(task_id)  # TODO: Needed?
                             muxed_path, return_code, errors = task_tracks.mux(
