@@ -30,7 +30,7 @@ class HTTP(Vault):
             api_mode: "query" for query parameters or "json" for JSON API
         """
         super().__init__(name)
-        self.url = host.rstrip("/")
+        self.url = host
         self.password = password
         self.username = username
         self.api_mode = api_mode.lower()
@@ -88,21 +88,23 @@ class HTTP(Vault):
 
         if self.api_mode == "json":
             try:
-                title = getattr(self, "current_title", None)
-                response = self.request(
-                    "GetKey",
-                    {
-                        "kid": kid,
-                        "service": service.lower(),
-                        "title": title,
-                    },
-                )
+                params = {
+                    "kid": kid,
+                    "service": service.lower(),
+                }
+
+                response = self.request("GetKey", params)
                 if response.get("status") == "not_found":
                     return None
                 keys = response.get("keys", [])
                 for key_entry in keys:
-                    if key_entry["kid"] == kid:
-                        return key_entry["key"]
+                    if isinstance(key_entry, str) and ":" in key_entry:
+                        entry_kid, entry_key = key_entry.split(":", 1)
+                        if entry_kid == kid:
+                            return entry_key
+                    elif isinstance(key_entry, dict):
+                        if key_entry.get("kid") == kid:
+                            return key_entry.get("key")
             except Exception as e:
                 print(f"Failed to get key ({e.__class__.__name__}: {e})")
                 return None
