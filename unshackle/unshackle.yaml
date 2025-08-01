@@ -16,8 +16,23 @@ muxing:
 
 # Login credentials for each Service
 credentials:
+  # Direct credentials (no profile support)
   EXAMPLE: email@example.com:password
-  EXAMPLE2: username:password
+
+  # Per-profile credentials with default fallback
+  SERVICE_NAME:
+    default: default@email.com:password # Used when no -p/--profile is specified
+    profile1: user1@email.com:password1
+    profile2: user2@email.com:password2
+
+  # Per-profile credentials without default (requires -p/--profile)
+  SERVICE_NAME2:
+    john: john@example.com:johnspassword
+    jane: jane@example.com:janespassword
+
+  # You can also use list format for passwords with special characters
+  SERVICE_NAME3:
+    default: ["user@email.com", ":PasswordWith:Colons"]
 
 # Override default directories used across unshackle
 directories:
@@ -39,8 +54,17 @@ directories:
 
 # Pre-define which Widevine or PlayReady device to use for each Service
 cdm:
+  # Global default CDM device (fallback for all services/profiles)
   default: WVD_1
-  EXAMPLE: PRD_1
+
+  # Direct service-specific CDM
+  DIFFERENT_EXAMPLE: PRD_1
+
+  # Per-profile CDM configuration
+  EXAMPLE:
+    john_sd: chromecdm_903_l3 # Profile 'john_sd' uses Chrome CDM L3
+    jane_uhd: nexus_5_l1 # Profile 'jane_uhd' uses Nexus 5 L1
+    default: generic_android_l3 # Default CDM for this service
 
 # Use pywidevine Serve-compliant Remote CDMs
 remote_cdm:
@@ -157,8 +181,33 @@ serve:
 # Configuration data for each Service
 services:
   # Service-specific configuration goes here
-  # EXAMPLE:
-  #   api_key: "service_specific_key"
+  # Profile-specific configurations can be nested under service names
+
+  # Example: with profile-specific device configs
+  EXAMPLE:
+    # Global service config
+    api_key: "service_api_key"
+
+    # Profile-specific device configurations
+    profiles:
+      john_sd:
+        device:
+          app_name: "AIV"
+          device_model: "SHIELD Android TV"
+      jane_uhd:
+        device:
+          app_name: "AIV"
+          device_model: "Fire TV Stick 4K"
+
+  # Example: Service with different regions per profile
+  SERVICE_NAME:
+    profiles:
+      us_account:
+        region: "US"
+        api_endpoint: "https://api.us.service.com"
+      uk_account:
+        region: "GB"
+        api_endpoint: "https://api.uk.service.com"
 
 # External proxy provider services
 proxy_providers:
