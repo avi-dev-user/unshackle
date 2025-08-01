@@ -214,12 +214,12 @@ proxy_providers:
   nordvpn:
     username: username_from_service_credentials
     password: password_from_service_credentials
-    servers:
+    server_map:
       - us: 12 # force US server #12 for US proxies
   surfsharkvpn:
     username: your_surfshark_service_username # Service credentials from https://my.surfshark.com/vpn/manual-setup/main/openvpn
     password: your_surfshark_service_password # Service credentials (not your login password)
-    servers:
+    server_map:
       - us: 3844 # force US server #3844 for US proxies
       - gb: 2697 # force GB server #2697 for GB proxies
       - au: 4621 # force AU server #4621 for AU proxies
