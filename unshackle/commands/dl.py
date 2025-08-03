@@ -148,6 +148,7 @@ class dl:
         help="Language wanted for Video, you would use this if the video language doesn't match the audio.",
     )
     @click.option("-sl", "--s-lang", type=LANGUAGE_RANGE, default=["all"], help="Language wanted for Subtitles.")
+    @click.option("-fs", "--forced-subs", is_flag=True, default=False, help="Include forced subtitle tracks.")
     @click.option(
         "--proxy",
         type=str,
@@ -405,6 +406,7 @@ class dl:
         lang: list[str],
         v_lang: list[str],
         s_lang: list[str],
+        forced_subs: bool,
         sub_format: Optional[Subtitle.Codec],
         video_only: bool,
         audio_only: bool,
@@ -672,7 +674,8 @@ class dl:
                             self.log.error(f"There's no {s_lang} Subtitle Track...")
                             sys.exit(1)
 
-                    title.tracks.select_subtitles(lambda x: not x.forced or is_close_match(x.language, lang))
+                    if not forced_subs:
+                        title.tracks.select_subtitles(lambda x: not x.forced or is_close_match(x.language, lang))
 
                 # filter audio tracks
                 # might have no audio tracks if part of the video, e.g. transport stream hls
