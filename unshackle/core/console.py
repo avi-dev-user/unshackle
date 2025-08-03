@@ -1,7 +1,4 @@
-import atexit
 import logging
-import signal
-import sys
 from datetime import datetime
 from types import ModuleType
 from typing import IO, Callable, Iterable, List, Literal, Mapping, Optional, Union
@@ -170,8 +167,6 @@ class ComfyConsole(Console):
             time.monotonic.
     """
 
-    _cleanup_registered = False
-
     def __init__(
         self,
         *,
@@ -238,9 +233,6 @@ class ComfyConsole(Console):
         if log_renderer:
             self._log_render = log_renderer
 
-        # Register terminal cleanup handlers
-        self._register_cleanup()
-
     def status(
         self,
         status: RenderableType,
@@ -290,38 +282,6 @@ class ComfyConsole(Console):
             return Live(padding, console=self, transient=True)
 
         return status_renderable
-
-    def _register_cleanup(self):
-        """Register terminal cleanup handlers."""
-        if not ComfyConsole._cleanup_registered:
-            ComfyConsole._cleanup_registered = True
-
-            # Register cleanup on normal exit
-            atexit.register(self._cleanup_terminal)
-
-            # Register cleanup on signals
-            signal.signal(signal.SIGINT, self._signal_handler)
-            signal.signal(signal.SIGTERM, self._signal_handler)
-
-    def _cleanup_terminal(self):
-        """Restore terminal to a clean state."""
-        try:
-            # Show cursor using ANSI escape codes
-            sys.stdout.write("\x1b[?25h")  # Show cursor
-            sys.stdout.write("\x1b[0m")  # Reset attributes
-            sys.stdout.flush()
-
-            # Also use Rich's method
-            self.show_cursor(True)
-        except Exception:
-            # Silently fail if cleanup fails
-            pass
-
-    def _signal_handler(self, signum, frame):
-        """Handle signals with cleanup."""
-        self._cleanup_terminal()
-        # Exit after cleanup
-        sys.exit(1)
 
 
 catppuccin_mocha = {
