@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2025-08-03
+
+### Added
+
+- **mp4decrypt Support**: Alternative DRM decryption method using mp4decrypt from Bento4
+  - Added `mp4decrypt` binary detection and support in binaries module
+  - New `decryption` configuration option in unshackle.yaml for service-specific decryption methods
+  - Enhanced PlayReady and Widevine DRM classes with mp4decrypt decryption support
+  - Service-specific decryption mapping allows choosing between `shaka` and `mp4decrypt` per service
+  - Improved error handling and progress reporting for mp4decrypt operations
+
+### Changed
+
+- **DRM Decryption Architecture**: Enhanced decryption system with dual method support
+  - Updated `dl.py` to handle service-specific decryption method selection
+  - Refactored `Config` class to manage decryption method mapping per service
+  - Enhanced DRM decrypt methods with `use_mp4decrypt` parameter for method selection
+
+### Fixed
+
+- **Service Track Filtering**: Cleaned up ATVP service to remove unnecessary track filtering
+  - Simplified track return logic to pass all tracks to dl.py for centralized filtering
+  - Removed unused codec and quality filter parameters from service initialization
+
 ## [1.2.0] - 2025-07-30
 
 ### Added
