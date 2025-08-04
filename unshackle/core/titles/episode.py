@@ -201,9 +201,10 @@ class Series(SortedKeyList, ABC):
     def tree(self, verbose: bool = False) -> Tree:
         seasons = Counter(x.season for x in self)
         num_seasons = len(seasons)
-        num_episodes = sum(seasons.values())
+        sum(seasons.values())
+        season_breakdown = ", ".join(f"S{season}({count})" for season, count in sorted(seasons.items()))
         tree = Tree(
-            f"{num_seasons} Season{['s', ''][num_seasons == 1]}, {num_episodes} Episode{['s', ''][num_episodes == 1]}",
+            f"{num_seasons} seasons, {season_breakdown}",
             guide_style="bright_black",
         )
         if verbose:
