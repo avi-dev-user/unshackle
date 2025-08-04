@@ -992,12 +992,15 @@ class dl:
                     with console.status(f"Decrypting tracks with {decrypt_tool}..."):
                         has_decrypted = False
                         for track in drm_tracks:
-                            for drm in track.drm:
-                                if hasattr(drm, "decrypt"):
-                                    drm.decrypt(track.path, use_mp4decrypt=use_mp4decrypt)
-                                    has_decrypted = True
-                                    events.emit(events.Types.TRACK_REPACKED, track=track)
-                                    break
+                            drm = track.get_drm_for_cdm(self.cdm)
+                            if drm and hasattr(drm, "decrypt"):
+                                drm.decrypt(track.path, use_mp4decrypt=use_mp4decrypt)
+                                has_decrypted = True
+                                events.emit(events.Types.TRACK_REPACKED, track=track)
+                            else:
+                                self.log.warning(
+                                    f"No matching DRM found for track {track} with CDM type {type(self.cdm).__name__}"
+                                )
                         if has_decrypted:
                             self.log.info(f"Decrypted tracks with {decrypt_tool}")
 
