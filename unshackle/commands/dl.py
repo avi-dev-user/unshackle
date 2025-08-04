@@ -139,7 +139,13 @@ class dl:
         default=None,
         help="Wanted episodes, e.g. `S01-S05,S07`, `S01E01-S02E03`, `S02-S02E03`, e.t.c, defaults to all.",
     )
-    @click.option("-l", "--lang", type=LANGUAGE_RANGE, default="en", help="Language wanted for Video and Audio.")
+    @click.option(
+        "-l",
+        "--lang",
+        type=LANGUAGE_RANGE,
+        default="en",
+        help="Language wanted for Video and Audio. Use 'orig' to select the original language, e.g. 'orig,en' for both original and English.",
+    )
     @click.option(
         "-vl",
         "--v-lang",
@@ -562,8 +568,31 @@ class dl:
                     )
 
             with console.status("Sorting tracks by language and bitrate...", spinner="dots"):
-                title.tracks.sort_videos(by_language=v_lang or lang)
-                title.tracks.sort_audio(by_language=lang)
+                video_sort_lang = v_lang or lang
+                processed_video_sort_lang = []
+                for language in video_sort_lang:
+                    if language == "orig":
+                        if title.language:
+                            orig_lang = str(title.language) if hasattr(title.language, "__str__") else title.language
+                            if orig_lang not in processed_video_sort_lang:
+                                processed_video_sort_lang.append(orig_lang)
+                    else:
+                        if language not in processed_video_sort_lang:
+                            processed_video_sort_lang.append(language)
+
+                processed_audio_sort_lang = []
+                for language in lang:
+                    if language == "orig":
+                        if title.language:
+                            orig_lang = str(title.language) if hasattr(title.language, "__str__") else title.language
+                            if orig_lang not in processed_audio_sort_lang:
+                                processed_audio_sort_lang.append(orig_lang)
+                    else:
+                        if language not in processed_audio_sort_lang:
+                            processed_audio_sort_lang.append(language)
+
+                title.tracks.sort_videos(by_language=processed_video_sort_lang)
+                title.tracks.sort_audio(by_language=processed_audio_sort_lang)
                 title.tracks.sort_subtitles(by_language=s_lang)
 
             if list_:
@@ -594,12 +623,27 @@ class dl:
                             self.log.error(f"There's no {vbitrate}kbps Video Track...")
                             sys.exit(1)
 
-                    # Filter out "best" from the video languages list.
                     video_languages = [lang for lang in (v_lang or lang) if lang != "best"]
                     if video_languages and "all" not in video_languages:
-                        title.tracks.videos = title.tracks.by_language(title.tracks.videos, video_languages)
+                        processed_video_lang = []
+                        for language in video_languages:
+                            if language == "orig":
+                                if title.language:
+                                    orig_lang = (
+                                        str(title.language) if hasattr(title.language, "__str__") else title.language
+                                    )
+                                    if orig_lang not in processed_video_lang:
+                                        processed_video_lang.append(orig_lang)
+                                else:
+                                    self.log.warning(
+                                        "Original language not available for title, skipping 'orig' selection for video"
+                                    )
+                            else:
+                                if language not in processed_video_lang:
+                                    processed_video_lang.append(language)
+                        title.tracks.videos = title.tracks.by_language(title.tracks.videos, processed_video_lang)
                         if not title.tracks.videos:
-                            self.log.error(f"There's no {video_languages} Video Track...")
+                            self.log.error(f"There's no {processed_video_lang} Video Track...")
                             sys.exit(1)
 
                     if quality:
@@ -702,8 +746,24 @@ class dl:
                             self.log.error(f"There's no {abitrate}kbps Audio Track...")
                             sys.exit(1)
                     if lang:
-                        if "best" in lang:
-                            # Get unique languages and select highest quality for each
+                        processed_lang = []
+                        for language in lang:
+                            if language == "orig":
+                                if title.language:
+                                    orig_lang = (
+                                        str(title.language) if hasattr(title.language, "__str__") else title.language
+                                    )
+                                    if orig_lang not in processed_lang:
+                                        processed_lang.append(orig_lang)
+                                else:
+                                    self.log.warning(
+                                        "Original language not available for title, skipping 'orig' selection"
+                                    )
+                            else:
+                                if language not in processed_lang:
+                                    processed_lang.append(language)
+
+                        if "best" in processed_lang:
                             unique_languages = {track.language for track in title.tracks.audio}
                             selected_audio = []
                             for language in unique_languages:
@@ -713,10 +773,13 @@ class dl:
                                 )
                                 selected_audio.append(highest_quality)
                             title.tracks.audio = selected_audio
-                        elif "all" not in lang:
-                            title.tracks.audio = title.tracks.by_language(title.tracks.audio, lang, per_language=1)
+                        elif "all" not in processed_lang:
+                            per_language = 0 if len(processed_lang) > 1 else 1
+                            title.tracks.audio = title.tracks.by_language(
+                                title.tracks.audio, processed_lang, per_language=per_language
+                            )
                             if not title.tracks.audio:
-                                self.log.error(f"There's no {lang} Audio Track, cannot continue...")
+                                self.log.error(f"There's no {processed_lang} Audio Track, cannot continue...")
                                 sys.exit(1)
 
                 if video_only or audio_only or subs_only or chapters_only or no_subs or no_audio or no_chapters:
