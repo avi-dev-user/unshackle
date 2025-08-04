@@ -355,6 +355,14 @@ class Tracks:
                     ]
                 )
 
+            if hasattr(vt, "range") and vt.range == Video.Range.HLG:
+                video_args.extend(
+                    [
+                        "--color-transfer-characteristics",
+                        "0:18",  # ARIB STD-B67 (HLG)
+                    ]
+                )
+
             cl.extend(video_args + ["(", str(vt.path), ")"])
 
         for i, at in enumerate(self.audio):
