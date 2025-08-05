@@ -126,14 +126,15 @@ class Hybrid:
     def extract_stream(self, save_path, type_):
         output = Path(config.directories.temp / f"{type_}.hevc")
 
-        self.log.info(f"+ Extracting {type_} stream")
-
-        returncode = self.ffmpeg_simple(save_path, output)
+        with console.status(f"Extracting {type_} stream...", spinner="dots"):
+            returncode = self.ffmpeg_simple(save_path, output)
 
         if returncode:
             output.unlink(missing_ok=True)
             self.log.error(f"x Failed extracting {type_} stream")
             sys.exit(1)
+
+        self.log.info(f"Extracted {type_} stream")
 
     def extract_rpu(self, video, untouched=False):
         if os.path.isfile(config.directories.temp / "RPU.bin") or os.path.isfile(
@@ -141,23 +142,24 @@ class Hybrid:
         ):
             return
 
-        self.log.info(f"+ Extracting{' untouched ' if untouched else ' '}RPU from Dolby Vision stream")
+        with console.status(
+            f"Extracting{' untouched ' if untouched else ' '}RPU from Dolby Vision stream...", spinner="dots"
+        ):
+            extraction_args = [str(DoviTool)]
+            if not untouched:
+                extraction_args += ["-m", "3"]
+            extraction_args += [
+                "extract-rpu",
+                config.directories.temp / "DV.hevc",
+                "-o",
+                config.directories.temp / f"{'RPU' if not untouched else 'RPU_UNT'}.bin",
+            ]
 
-        extraction_args = [str(DoviTool)]
-        if not untouched:
-            extraction_args += ["-m", "3"]
-        extraction_args += [
-            "extract-rpu",
-            config.directories.temp / "DV.hevc",
-            "-o",
-            config.directories.temp / f"{'RPU' if not untouched else 'RPU_UNT'}.bin",
-        ]
-
-        rpu_extraction = subprocess.run(
-            extraction_args,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
+            rpu_extraction = subprocess.run(
+                extraction_args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
 
         if rpu_extraction.returncode:
             Path.unlink(config.directories.temp / f"{'RPU' if not untouched else 'RPU_UNT'}.bin")
@@ -167,6 +169,8 @@ class Hybrid:
                 raise ValueError("Dolby Vision VideoTrack seems to be corrupt")
             else:
                 raise ValueError(f"Failed extracting{' untouched ' if untouched else ' '}RPU from Dolby Vision stream")
+
+        self.log.info(f"Extracted{' untouched ' if untouched else ' '}RPU from Dolby Vision stream")
 
     def level_6(self):
         """Edit RPU Level 6 values"""
@@ -185,25 +189,27 @@ class Hybrid:
             json.dump(level6, level6_file, indent=3)
 
         if not os.path.isfile(config.directories.temp / "RPU_L6.bin"):
-            self.log.info("+ Editing RPU Level 6 values")
-            level6 = subprocess.run(
-                [
-                    str(DoviTool),
-                    "editor",
-                    "-i",
-                    config.directories.temp / self.rpu_file,
-                    "-j",
-                    config.directories.temp / "L6.json",
-                    "-o",
-                    config.directories.temp / "RPU_L6.bin",
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
+            with console.status("Editing RPU Level 6 values...", spinner="dots"):
+                level6 = subprocess.run(
+                    [
+                        str(DoviTool),
+                        "editor",
+                        "-i",
+                        config.directories.temp / self.rpu_file,
+                        "-j",
+                        config.directories.temp / "L6.json",
+                        "-o",
+                        config.directories.temp / "RPU_L6.bin",
+                    ],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
 
             if level6.returncode:
                 Path.unlink(config.directories.temp / "RPU_L6.bin")
                 raise ValueError("Failed editing RPU Level 6 values")
+
+            self.log.info("Edited RPU Level 6 values")
 
             # Update rpu_file to use the edited version
             self.rpu_file = "RPU_L6.bin"
@@ -212,34 +218,35 @@ class Hybrid:
         if os.path.isfile(config.directories.temp / self.hevc_file):
             return
 
-        self.log.info(f"+ Injecting Dolby Vision metadata into {self.hdr_type} stream")
+        with console.status(f"Injecting Dolby Vision metadata into {self.hdr_type} stream...", spinner="dots"):
+            inject_cmd = [
+                str(DoviTool),
+                "inject-rpu",
+                "-i",
+                config.directories.temp / "HDR10.hevc",
+                "--rpu-in",
+                config.directories.temp / self.rpu_file,
+            ]
 
-        inject_cmd = [
-            str(DoviTool),
-            "inject-rpu",
-            "-i",
-            config.directories.temp / "HDR10.hevc",
-            "--rpu-in",
-            config.directories.temp / self.rpu_file,
-        ]
+            # If we converted from HDR10+, optionally remove HDR10+ metadata during injection
+            # Default to removing HDR10+ metadata since we're converting to DV
+            if self.hdr10plus_to_dv:
+                inject_cmd.append("--drop-hdr10plus")
+                self.log.info("  - Removing HDR10+ metadata during injection")
 
-        # If we converted from HDR10+, optionally remove HDR10+ metadata during injection
-        # Default to removing HDR10+ metadata since we're converting to DV
-        if self.hdr10plus_to_dv:
-            inject_cmd.append("--drop-hdr10plus")
-            self.log.info("  - Removing HDR10+ metadata during injection")
+            inject_cmd.extend(["-o", config.directories.temp / self.hevc_file])
 
-        inject_cmd.extend(["-o", config.directories.temp / self.hevc_file])
-
-        inject = subprocess.run(
-            inject_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
+            inject = subprocess.run(
+                inject_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
 
         if inject.returncode:
             Path.unlink(config.directories.temp / self.hevc_file)
             raise ValueError("Failed injecting Dolby Vision metadata into HDR10 stream")
+
+        self.log.info(f"Injected Dolby Vision metadata into {self.hdr_type} stream")
 
     def extract_hdr10plus(self, _video):
         """Extract HDR10+ metadata from the video stream"""
@@ -249,20 +256,19 @@ class Hybrid:
         if not HDR10PlusTool:
             raise ValueError("HDR10Plus_tool not found. Please install it to use HDR10+ to DV conversion.")
 
-        self.log.info("+ Extracting HDR10+ metadata")
-
-        # HDR10Plus_tool needs raw HEVC stream
-        extraction = subprocess.run(
-            [
-                str(HDR10PlusTool),
-                "extract",
-                str(config.directories.temp / "HDR10.hevc"),
-                "-o",
-                str(config.directories.temp / self.hdr10plus_file),
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
+        with console.status("Extracting HDR10+ metadata...", spinner="dots"):
+            # HDR10Plus_tool needs raw HEVC stream
+            extraction = subprocess.run(
+                [
+                    str(HDR10PlusTool),
+                    "extract",
+                    str(config.directories.temp / "HDR10.hevc"),
+                    "-o",
+                    str(config.directories.temp / self.hdr10plus_file),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
 
         if extraction.returncode:
             raise ValueError("Failed extracting HDR10+ metadata")
@@ -271,47 +277,49 @@ class Hybrid:
         if os.path.getsize(config.directories.temp / self.hdr10plus_file) == 0:
             raise ValueError("No HDR10+ metadata found in the stream")
 
+        self.log.info("Extracted HDR10+ metadata")
+
     def convert_hdr10plus_to_dv(self):
         """Convert HDR10+ metadata to Dolby Vision RPU"""
         if os.path.isfile(config.directories.temp / "RPU.bin"):
             return
 
-        self.log.info("+ Converting HDR10+ metadata to Dolby Vision")
+        with console.status("Converting HDR10+ metadata to Dolby Vision...", spinner="dots"):
+            # First create the extra metadata JSON for dovi_tool
+            extra_metadata = {
+                "cm_version": "V29",
+                "length": 0,  # dovi_tool will figure this out
+                "level6": {
+                    "max_display_mastering_luminance": 1000,
+                    "min_display_mastering_luminance": 1,
+                    "max_content_light_level": 0,
+                    "max_frame_average_light_level": 0,
+                },
+            }
 
-        # First create the extra metadata JSON for dovi_tool
-        extra_metadata = {
-            "cm_version": "V29",
-            "length": 0,  # dovi_tool will figure this out
-            "level6": {
-                "max_display_mastering_luminance": 1000,
-                "min_display_mastering_luminance": 1,
-                "max_content_light_level": 0,
-                "max_frame_average_light_level": 0,
-            },
-        }
+            with open(config.directories.temp / "extra.json", "w") as f:
+                json.dump(extra_metadata, f, indent=2)
 
-        with open(config.directories.temp / "extra.json", "w") as f:
-            json.dump(extra_metadata, f, indent=2)
-
-        # Generate DV RPU from HDR10+ metadata
-        conversion = subprocess.run(
-            [
-                str(DoviTool),
-                "generate",
-                "-j",
-                str(config.directories.temp / "extra.json"),
-                "--hdr10plus-json",
-                str(config.directories.temp / self.hdr10plus_file),
-                "-o",
-                str(config.directories.temp / "RPU.bin"),
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
+            # Generate DV RPU from HDR10+ metadata
+            conversion = subprocess.run(
+                [
+                    str(DoviTool),
+                    "generate",
+                    "-j",
+                    str(config.directories.temp / "extra.json"),
+                    "--hdr10plus-json",
+                    str(config.directories.temp / self.hdr10plus_file),
+                    "-o",
+                    str(config.directories.temp / "RPU.bin"),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
 
         if conversion.returncode:
             raise ValueError("Failed converting HDR10+ to Dolby Vision")
 
+        self.log.info("Converted HDR10+ metadata to Dolby Vision")
         self.log.info("✓ HDR10+ successfully converted to Dolby Vision Profile 8")
 
         # Clean up temporary files
