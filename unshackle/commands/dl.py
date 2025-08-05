@@ -783,23 +783,26 @@ class dl:
                                 sys.exit(1)
 
                 if video_only or audio_only or subs_only or chapters_only or no_subs or no_audio or no_chapters:
-                    # Determine which track types to keep based on the flags
-                    keep_videos = True
-                    keep_audio = True
-                    keep_subtitles = True
-                    keep_chapters = True
+                    keep_videos = False
+                    keep_audio = False
+                    keep_subtitles = False
+                    keep_chapters = False
 
-                    # Handle exclusive flags (only keep one type)
-                    if video_only:
-                        keep_audio = keep_subtitles = keep_chapters = False
-                    elif audio_only:
-                        keep_videos = keep_subtitles = keep_chapters = False
-                    elif subs_only:
-                        keep_videos = keep_audio = keep_chapters = False
-                    elif chapters_only:
-                        keep_videos = keep_audio = keep_subtitles = False
+                    if video_only or audio_only or subs_only or chapters_only:
+                        if video_only:
+                            keep_videos = True
+                        if audio_only:
+                            keep_audio = True
+                        if subs_only:
+                            keep_subtitles = True
+                        if chapters_only:
+                            keep_chapters = True
+                    else:
+                        keep_videos = True
+                        keep_audio = True
+                        keep_subtitles = True
+                        keep_chapters = True
 
-                    # Handle exclusion flags (remove specific types)
                     if no_subs:
                         keep_subtitles = False
                     if no_audio:
@@ -807,7 +810,6 @@ class dl:
                     if no_chapters:
                         keep_chapters = False
 
-                    # Build the kept_tracks list without duplicates
                     kept_tracks = []
                     if keep_videos:
                         kept_tracks.extend(title.tracks.videos)
