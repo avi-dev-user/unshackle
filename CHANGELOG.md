@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **HLG Transfer Characteristics Preservation**: Enhanced video muxing to preserve HLG color metadata
+  - Added automatic detection of HLG video tracks during muxing process
+  - Implemented `--color-transfer-characteristics 0:18` argument for mkvmerge when processing HLG content
+  - Prevents incorrect conversion from HLG (18) to BT.2020 (14) transfer characteristics
+  - Ensures proper HLG playback support on compatible hardware without manual editing
+- **Original Language Support**: Enhanced language selection with 'orig' keyword support
+  - Added support for 'orig' language selector for both video and audio tracks
+  - Automatically detects and uses the title's original language when 'orig' is specified
+  - Improved language processing logic with better duplicate handling
+  - Enhanced help text to document original language selection usage
+- **Forced Subtitle Support**: Added option to include forced subtitle tracks
+  - New functionality to download and include forced subtitle tracks alongside regular subtitles
+- **WebVTT Subtitle Filtering**: Enhanced subtitle processing capabilities
+  - Added filtering for unwanted cues in WebVTT subtitles
+  - Improved subtitle quality by removing unnecessary metadata
+
+### Changed
+
+- **DRM Track Decryption**: Improved DRM decryption track selection logic
+  - Enhanced `get_drm_for_cdm()` method usage for better DRM-CDM matching
+  - Added warning messages when no matching DRM is found for tracks
+  - Improved error handling and logging for DRM decryption failures
+- **Series Tree Representation**: Enhanced episode tree display formatting
+  - Updated series tree to show season breakdown with episode counts
+  - Improved visual representation with "S{season}({count})" format
+  - Better organization of series information in console output
+- **Hybrid Processing UI**: Enhanced extraction and conversion processes
+  - Added dynamic spinning bars to follow the rest of the codebase design
+  - Improved visual feedback during hybrid HDR processing operations
+- **Track Selection Logic**: Enhanced multi-track selection capabilities
+  - Fixed track selection to support combining -V, -A, -S flags properly
+  - Improved flexibility in selecting multiple track types simultaneously
+- **Service Subtitle Support**: Added configuration for services without subtitle support
+  - Services can now indicate if they don't support subtitle downloads
+  - Prevents unnecessary subtitle download attempts for unsupported services
+- **Update Checker**: Enhanced update checking logic and cache handling
+  - Improved rate limiting and caching mechanisms for update checks
+  - Better performance and reduced API calls to GitHub
+
+### Fixed
+
+- **PlayReady KID Extraction**: Enhanced KID extraction from PSSH data
+  - Added base64 support and XML parsing for better KID detection
+  - Fixed issue where only one KID was being extracted for certain services
+  - Improved multi-KID support for PlayReady protected content
+- **Dolby Vision Detection**: Improved DV codec detection across all formats
+  - Fixed detection of dvhe.05.06 codec which was not being recognized correctly
+  - Enhanced detection logic in Episode and Movie title classes
+  - Better support for various Dolby Vision codec variants
+
 ## [1.3.0] - 2025-08-03
 
 ### Added
