@@ -541,7 +541,7 @@ class dl:
                 events.subscribe(events.Types.TRACK_REPACKED, service.on_track_repacked)
                 events.subscribe(events.Types.TRACK_MULTIPLEX, service.on_track_multiplex)
 
-            if hasattr(service, 'NO_SUBTITLES') and service.NO_SUBTITLES:
+            if hasattr(service, "NO_SUBTITLES") and service.NO_SUBTITLES:
                 console.log("Skipping subtitles - service does not support subtitle downloads")
                 no_subs = True
                 s_lang = None
@@ -911,7 +911,7 @@ class dl:
                 while (
                     not title.tracks.subtitles
                     and not no_subs
-                    and not (hasattr(service, 'NO_SUBTITLES') and service.NO_SUBTITLES)
+                    and not (hasattr(service, "NO_SUBTITLES") and service.NO_SUBTITLES)
                     and not video_only
                     and len(title.tracks.videos) > video_track_n
                     and any(
