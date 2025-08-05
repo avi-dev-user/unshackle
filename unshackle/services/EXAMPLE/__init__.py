@@ -33,6 +33,7 @@ class EXAMPLE(Service):
 
     TITLE_RE = r"^(?:https?://?domain\.com/details/)?(?P<title_id>[^/]+)"
     GEOFENCE = ("US", "UK")
+    NO_SUBTITLES = True
 
     @staticmethod
     @click.command(name="EXAMPLE", short_help="https://domain.com")
