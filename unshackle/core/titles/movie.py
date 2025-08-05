@@ -121,8 +121,9 @@ class Movie(Title):
                 frame_rate = float(primary_video_track.frame_rate)
                 if hdr_format:
                     if (primary_video_track.hdr_format or "").startswith("Dolby Vision"):
-                        if (primary_video_track.hdr_format_commercial) != "Dolby Vision":
-                            name += f" DV {DYNAMIC_RANGE_MAP.get(hdr_format)} "
+                        name += " DV"
+                        if DYNAMIC_RANGE_MAP.get(hdr_format) and DYNAMIC_RANGE_MAP.get(hdr_format) != "DV":
+                            name += " HDR"
                     else:
                         name += f" {DYNAMIC_RANGE_MAP.get(hdr_format)} "
                 elif trc and "HLG" in trc:
