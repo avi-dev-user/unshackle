@@ -305,53 +305,59 @@ def tag_file(path: Path, title: Title, tmdb_id: Optional[int] | None = None) -> 
         return
 
     if config.tag_imdb_tmdb:
-        simkl_data, simkl_title, simkl_tmdb_id = search_simkl(name, year, kind)
-
-        if simkl_data and simkl_title and fuzzy_match(simkl_title, name):
-            log.debug("Using Simkl data for tags")
-            if simkl_tmdb_id:
-                tmdb_id = simkl_tmdb_id
-
-            show_ids = simkl_data.get("show", {}).get("ids", {})
-            if show_ids.get("imdb"):
-                standard_tags["IMDB"] = f"https://www.imdb.com/title/{show_ids['imdb']}"
-            if show_ids.get("tvdb"):
-                standard_tags["TVDB"] = f"https://thetvdb.com/dereferrer/series/{show_ids['tvdb']}"
-            if show_ids.get("tmdbtv"):
-                standard_tags["TMDB"] = f"https://www.themoviedb.org/tv/{show_ids['tmdbtv']}"
+        # If tmdb_id is provided (via --tmdb), skip Simkl and use TMDB directly
+        if tmdb_id is not None:
+            log.debug("Using provided TMDB ID %s for tags", tmdb_id)
         else:
-            api_key = _api_key()
-            if not api_key:
-                log.debug("No TMDB API key set; applying basic tags only")
+            # Try Simkl first for automatic lookup
+            simkl_data, simkl_title, simkl_tmdb_id = search_simkl(name, year, kind)
+
+            if simkl_data and simkl_title and fuzzy_match(simkl_title, name):
+                log.debug("Using Simkl data for tags")
+                if simkl_tmdb_id:
+                    tmdb_id = simkl_tmdb_id
+
+                show_ids = simkl_data.get("show", {}).get("ids", {})
+                if show_ids.get("imdb"):
+                    standard_tags["IMDB"] = f"https://www.imdb.com/title/{show_ids['imdb']}"
+                if show_ids.get("tvdb"):
+                    standard_tags["TVDB"] = f"https://thetvdb.com/dereferrer/series/{show_ids['tvdb']}"
+                if show_ids.get("tmdbtv"):
+                    standard_tags["TMDB"] = f"https://www.themoviedb.org/tv/{show_ids['tmdbtv']}"
+
+        # Use TMDB API for additional metadata (either from provided ID or Simkl lookup)
+        api_key = _api_key()
+        if not api_key:
+            log.debug("No TMDB API key set; applying basic tags only")
+            _apply_tags(path, custom_tags)
+            return
+
+        tmdb_title: Optional[str] = None
+        if tmdb_id is None:
+            tmdb_id, tmdb_title = search_tmdb(name, year, kind)
+            log.debug("TMDB search result: %r (ID %s)", tmdb_title, tmdb_id)
+            if not tmdb_id or not tmdb_title or not fuzzy_match(tmdb_title, name):
+                log.debug("TMDB search did not match; skipping external ID lookup")
                 _apply_tags(path, custom_tags)
                 return
 
-            tmdb_title: Optional[str] = None
-            if tmdb_id is None:
-                tmdb_id, tmdb_title = search_tmdb(name, year, kind)
-                log.debug("TMDB search result: %r (ID %s)", tmdb_title, tmdb_id)
-                if not tmdb_id or not tmdb_title or not fuzzy_match(tmdb_title, name):
-                    log.debug("TMDB search did not match; skipping external ID lookup")
-                    _apply_tags(path, custom_tags)
-                    return
+        tmdb_url = f"https://www.themoviedb.org/{'movie' if kind == 'movie' else 'tv'}/{tmdb_id}"
+        standard_tags["TMDB"] = tmdb_url
+        try:
+            ids = external_ids(tmdb_id, kind)
+        except requests.RequestException as exc:
+            log.debug("Failed to fetch external IDs: %s", exc)
+            ids = {}
+        else:
+            log.debug("External IDs found: %s", ids)
 
-            tmdb_url = f"https://www.themoviedb.org/{'movie' if kind == 'movie' else 'tv'}/{tmdb_id}"
-            standard_tags["TMDB"] = tmdb_url
-            try:
-                ids = external_ids(tmdb_id, kind)
-            except requests.RequestException as exc:
-                log.debug("Failed to fetch external IDs: %s", exc)
-                ids = {}
-            else:
-                log.debug("External IDs found: %s", ids)
-
-            imdb_id = ids.get("imdb_id")
-            if imdb_id:
-                standard_tags["IMDB"] = f"https://www.imdb.com/title/{imdb_id}"
-            tvdb_id = ids.get("tvdb_id")
-            if tvdb_id:
-                tvdb_prefix = "movies" if kind == "movie" else "series"
-                standard_tags["TVDB"] = f"https://thetvdb.com/dereferrer/{tvdb_prefix}/{tvdb_id}"
+        imdb_id = ids.get("imdb_id")
+        if imdb_id:
+            standard_tags["IMDB"] = f"https://www.imdb.com/title/{imdb_id}"
+        tvdb_id = ids.get("tvdb_id")
+        if tvdb_id:
+            tvdb_prefix = "movies" if kind == "movie" else "series"
+            standard_tags["TVDB"] = f"https://thetvdb.com/dereferrer/{tvdb_prefix}/{tvdb_id}"
 
     merged_tags = {
         **custom_tags,
