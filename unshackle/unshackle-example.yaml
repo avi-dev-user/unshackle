@@ -1,6 +1,12 @@
 # Group or Username to postfix to the end of all download filenames following a dash
 tag: user_tag
 
+# Enable/disable tagging with group name (default: true)
+tag_group_name: true
+
+# Enable/disable tagging with IMDB/TMDB/TVDB details (default: true)
+tag_imdb_tmdb: true
+
 # Set terminal background color (custom option not in CONFIG.md)
 set_terminal_bg: false
 
