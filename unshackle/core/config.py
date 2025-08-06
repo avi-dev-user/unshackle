@@ -90,6 +90,10 @@ class Config:
         self.update_check_interval: int = kwargs.get("update_check_interval", 24)
         self.scene_naming: bool = kwargs.get("scene_naming", True)
 
+        self.title_cache_time: int = kwargs.get("title_cache_time", 1800)  # 30 minutes default
+        self.title_cache_max_retention: int = kwargs.get("title_cache_max_retention", 86400)  # 24 hours default
+        self.title_cache_enabled: bool = kwargs.get("title_cache_enabled", True)
+
     @classmethod
     def from_yaml(cls, path: Path) -> Config:
         if not path.exists():

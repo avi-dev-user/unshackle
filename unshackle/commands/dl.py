@@ -240,6 +240,8 @@ class dl:
         help="Max workers/threads to download with per-track. Default depends on the downloader.",
     )
     @click.option("--downloads", type=int, default=1, help="Amount of tracks to download concurrently.")
+    @click.option("--no-cache", "no_cache", is_flag=True, default=False, help="Bypass title cache for this download.")
+    @click.option("--reset-cache", "reset_cache", is_flag=True, default=False, help="Clear title cache before fetching.")
     @click.pass_context
     def cli(ctx: click.Context, **kwargs: Any) -> dl:
         return dl(ctx, **kwargs)
@@ -460,7 +462,7 @@ class dl:
                 self.log.info("Authenticated with Service")
 
         with console.status("Fetching Title Metadata...", spinner="dots"):
-            titles = service.get_titles()
+            titles = service.get_titles_cached()
             if not titles:
                 self.log.error("No titles returned, nothing to download...")
                 sys.exit(1)

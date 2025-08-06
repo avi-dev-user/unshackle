@@ -21,6 +21,7 @@ from unshackle.core.constants import AnyTrack
 from unshackle.core.credential import Credential
 from unshackle.core.drm import DRM_T
 from unshackle.core.search_result import SearchResult
+from unshackle.core.title_cacher import TitleCacher, get_account_hash, get_region_from_proxy
 from unshackle.core.titles import Title_T, Titles_T
 from unshackle.core.tracks import Chapters, Tracks
 from unshackle.core.utilities import get_ip_info
@@ -42,6 +43,12 @@ class Service(metaclass=ABCMeta):
 
         self.session = self.get_session()
         self.cache = Cacher(self.__class__.__name__)
+        self.title_cache = TitleCacher(self.__class__.__name__)
+
+        # Store context for cache control flags and credential
+        self.ctx = ctx
+        self.credential = None  # Will be set in authenticate()
+        self.current_region = None  # Will be set based on proxy/geolocation
 
         if not ctx.parent or not ctx.parent.params.get("no_proxy"):
             if ctx.parent:
@@ -79,6 +86,15 @@ class Service(metaclass=ABCMeta):
                             ).decode()
                         }
                     )
+                # Store region from proxy
+                self.current_region = get_region_from_proxy(proxy)
+            else:
+                # No proxy, try to get current region
+                try:
+                    ip_info = get_ip_info(self.session)
+                    self.current_region = ip_info.get("country", "").lower() if ip_info else None
+                except Exception:
+                    self.current_region = None
 
     # Optional Abstract functions
     # The following functions may be implemented by the Service.
@@ -122,6 +138,9 @@ class Service(metaclass=ABCMeta):
             if not isinstance(cookies, CookieJar):
                 raise TypeError(f"Expected cookies to be a {CookieJar}, not {cookies!r}.")
             self.session.cookies.update(cookies)
+
+        # Store credential for cache key generation
+        self.credential = credential
 
     def search(self) -> Generator[SearchResult, None, None]:
         """
@@ -186,6 +205,52 @@ class Service(metaclass=ABCMeta):
         You can use the `data` dictionary class instance attribute of each Title to store data you may need later on.
         This can be useful to store information on each title that will be required like any sub-asset IDs, or such.
         """
+
+    def get_titles_cached(self, title_id: str = None) -> Titles_T:
+        """
+        Cached wrapper around get_titles() to reduce redundant API calls.
+
+        This method checks the cache before calling get_titles() and handles
+        fallback to cached data when API calls fail.
+
+        Args:
+            title_id: Optional title ID for cache key generation.
+                     If not provided, will try to extract from service instance.
+
+        Returns:
+            Titles object (Movies, Series, or Album)
+        """
+        # Try to get title_id from service instance if not provided
+        if title_id is None:
+            # Different services store the title ID in different attributes
+            if hasattr(self, "title"):
+                title_id = self.title
+            elif hasattr(self, "title_id"):
+                title_id = self.title_id
+            else:
+                # If we can't determine title_id, just call get_titles directly
+                self.log.debug("Cannot determine title_id for caching, bypassing cache")
+                return self.get_titles()
+
+        # Get cache control flags from context
+        no_cache = False
+        reset_cache = False
+        if self.ctx and self.ctx.parent:
+            no_cache = self.ctx.parent.params.get("no_cache", False)
+            reset_cache = self.ctx.parent.params.get("reset_cache", False)
+
+        # Get account hash for cache key
+        account_hash = get_account_hash(self.credential)
+
+        # Use title cache to get titles with fallback support
+        return self.title_cache.get_cached_titles(
+            title_id=str(title_id),
+            fetch_function=self.get_titles,
+            region=self.current_region,
+            account_hash=account_hash,
+            no_cache=no_cache,
+            reset_cache=reset_cache,
+        )
 
     @abstractmethod
     def get_tracks(self, title: Title_T) -> Tracks:
