@@ -143,7 +143,7 @@ class dl:
         "-l",
         "--lang",
         type=LANGUAGE_RANGE,
-        default="en",
+        default="orig",
         help="Language wanted for Video and Audio. Use 'orig' to select the original language, e.g. 'orig,en' for both original and English.",
     )
     @click.option(
@@ -436,6 +436,7 @@ class dl:
         **__: Any,
     ) -> None:
         self.tmdb_searched = False
+        self.search_source = None
         start_time = time.time()
 
         # Check if dovi_tool is available when hybrid mode is requested
@@ -493,34 +494,34 @@ class dl:
                 if self.tmdb_id:
                     tmdb_title = tags.get_title(self.tmdb_id, kind)
                 else:
-                    self.tmdb_id, tmdb_title = tags.search_tmdb(title.title, title.year, kind)
+                    self.tmdb_id, tmdb_title, self.search_source = tags.search_show_info(title.title, title.year, kind)
                     if not (self.tmdb_id and tmdb_title and tags.fuzzy_match(tmdb_title, title.title)):
                         self.tmdb_id = None
                 if list_ or list_titles:
                     if self.tmdb_id:
                         console.print(
                             Padding(
-                                f"TMDB -> {tmdb_title or '?'} [bright_black](ID {self.tmdb_id})",
+                                f"Search -> {tmdb_title or '?'} [bright_black](ID {self.tmdb_id})",
                                 (0, 5),
                             )
                         )
                     else:
-                        console.print(Padding("TMDB -> [bright_black]No match found[/]", (0, 5)))
+                        console.print(Padding("Search -> [bright_black]No match found[/]", (0, 5)))
                 self.tmdb_searched = True
 
             if isinstance(title, Movie) and (list_ or list_titles) and not self.tmdb_id:
-                movie_id, movie_title = tags.search_tmdb(title.name, title.year, "movie")
+                movie_id, movie_title, _ = tags.search_show_info(title.name, title.year, "movie")
                 if movie_id:
                     console.print(
                         Padding(
-                            f"TMDB -> {movie_title or '?'} [bright_black](ID {movie_id})",
+                            f"Search -> {movie_title or '?'} [bright_black](ID {movie_id})",
                             (0, 5),
                         )
                     )
                 else:
-                    console.print(Padding("TMDB -> [bright_black]No match found[/]", (0, 5)))
+                    console.print(Padding("Search -> [bright_black]No match found[/]", (0, 5)))
 
-            if self.tmdb_id:
+            if self.tmdb_id and getattr(self, 'search_source', None) != 'simkl':
                 kind = "tv" if isinstance(title, Episode) else "movie"
                 tags.external_ids(self.tmdb_id, kind)
                 if self.tmdb_year:
