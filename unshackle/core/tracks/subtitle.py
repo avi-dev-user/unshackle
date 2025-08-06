@@ -870,7 +870,18 @@ class Subtitle(Track):
         elif sdh_method == "filter-subs":
             # Force use of filter-subs
             sub = Subtitles(self.path)
-            sub.filter(rm_fonts=True, rm_ast=True, rm_music=True, rm_effects=True, rm_names=True, rm_author=True)
+            try:
+                sub.filter(rm_fonts=True, rm_ast=True, rm_music=True, rm_effects=True, rm_names=True, rm_author=True)
+            except ValueError as e:
+                if "too many values to unpack" in str(e):
+                    # Retry without name removal if the error is due to multiple colons in time references
+                    # This can happen with lines like "at 10:00 and 2:00"
+                    sub = Subtitles(self.path)
+                    sub.filter(
+                        rm_fonts=True, rm_ast=True, rm_music=True, rm_effects=True, rm_names=False, rm_author=True
+                    )
+                else:
+                    raise
             sub.save()
             return
         elif sdh_method == "auto":
@@ -906,7 +917,18 @@ class Subtitle(Track):
             )
         else:
             sub = Subtitles(self.path)
-            sub.filter(rm_fonts=True, rm_ast=True, rm_music=True, rm_effects=True, rm_names=True, rm_author=True)
+            try:
+                sub.filter(rm_fonts=True, rm_ast=True, rm_music=True, rm_effects=True, rm_names=True, rm_author=True)
+            except ValueError as e:
+                if "too many values to unpack" in str(e):
+                    # Retry without name removal if the error is due to multiple colons in time references
+                    # This can happen with lines like "at 10:00 and 2:00"
+                    sub = Subtitles(self.path)
+                    sub.filter(
+                        rm_fonts=True, rm_ast=True, rm_music=True, rm_effects=True, rm_names=False, rm_author=True
+                    )
+                else:
+                    raise
             sub.save()
 
     def reverse_rtl(self) -> None:
