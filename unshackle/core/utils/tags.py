@@ -64,6 +64,11 @@ def search_simkl(title: str, year: Optional[int], kind: str) -> Tuple[Optional[d
         data = resp.json()
         log.debug("Simkl API response received")
 
+        # Handle case where SIMKL returns empty list (no results)
+        if isinstance(data, list):
+            log.debug("Simkl returned list (no matches) for %r", filename)
+            return None, None, None
+
         # Handle TV show responses
         if data.get("type") == "episode" and "show" in data:
             show_info = data["show"]
