@@ -44,6 +44,89 @@ def fuzzy_match(a: str, b: str, threshold: float = 0.8) -> bool:
     return ratio >= threshold
 
 
+def search_simkl(title: str, year: Optional[int], kind: str) -> Tuple[Optional[dict], Optional[str], Optional[int]]:
+    """Search Simkl API for show information by filename (no auth required)."""
+    log.debug("Searching Simkl for %r (%s, %s)", title, kind, year)
+
+    # Construct appropriate filename based on type
+    filename = f"{title}"
+    if year:
+        filename = f"{title} {year}"
+
+    if kind == "tv":
+        filename += " S01E01.mkv"
+    else:  # movie
+        filename += " 2160p.mkv"
+
+    try:
+        resp = requests.post("https://api.simkl.com/search/file", json={"file": filename}, headers=HEADERS, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        log.debug("Simkl API response received")
+
+        # Handle case where SIMKL returns empty list (no results)
+        if isinstance(data, list):
+            log.debug("Simkl returned list (no matches) for %r", filename)
+            return None, None, None
+
+        # Handle TV show responses
+        if data.get("type") == "episode" and "show" in data:
+            show_info = data["show"]
+            show_title = show_info.get("title")
+            show_year = show_info.get("year")
+
+            # Verify title matches and year if provided
+            if not fuzzy_match(show_title, title):
+                log.debug("Simkl title mismatch: searched %r, got %r", title, show_title)
+                return None, None, None
+            if year and show_year and abs(year - show_year) > 1:  # Allow 1 year difference
+                log.debug("Simkl year mismatch: searched %d, got %d", year, show_year)
+                return None, None, None
+
+            tmdb_id = show_info.get("ids", {}).get("tmdbtv")
+            if tmdb_id:
+                tmdb_id = int(tmdb_id)
+            log.debug("Simkl -> %s (TMDB ID %s)", show_title, tmdb_id)
+            return data, show_title, tmdb_id
+
+        # Handle movie responses
+        elif data.get("type") == "movie" and "movie" in data:
+            movie_info = data["movie"]
+            movie_title = movie_info.get("title")
+            movie_year = movie_info.get("year")
+
+            # Verify title matches and year if provided
+            if not fuzzy_match(movie_title, title):
+                log.debug("Simkl title mismatch: searched %r, got %r", title, movie_title)
+                return None, None, None
+            if year and movie_year and abs(year - movie_year) > 1:  # Allow 1 year difference
+                log.debug("Simkl year mismatch: searched %d, got %d", year, movie_year)
+                return None, None, None
+
+            ids = movie_info.get("ids", {})
+            tmdb_id = ids.get("tmdb") or ids.get("moviedb")
+            if tmdb_id:
+                tmdb_id = int(tmdb_id)
+            log.debug("Simkl -> %s (TMDB ID %s)", movie_title, tmdb_id)
+            return data, movie_title, tmdb_id
+
+    except (requests.RequestException, ValueError, KeyError) as exc:
+        log.debug("Simkl search failed: %s", exc)
+
+    return None, None, None
+
+
+def search_show_info(title: str, year: Optional[int], kind: str) -> Tuple[Optional[int], Optional[str], Optional[str]]:
+    """Search for show information, trying Simkl first, then TMDB fallback. Returns (tmdb_id, title, source)."""
+    simkl_data, simkl_title, simkl_tmdb_id = search_simkl(title, year, kind)
+
+    if simkl_data and simkl_title and fuzzy_match(simkl_title, title):
+        return simkl_tmdb_id, simkl_title, "simkl"
+
+    tmdb_id, tmdb_title = search_tmdb(title, year, kind)
+    return tmdb_id, tmdb_title, "tmdb"
+
+
 def search_tmdb(title: str, year: Optional[int], kind: str) -> Tuple[Optional[int], Optional[str]]:
     api_key = _api_key()
     if not api_key:
@@ -202,10 +285,8 @@ def tag_file(path: Path, title: Title, tmdb_id: Optional[int] | None = None) -> 
     log.debug("Tagging file %s with title %r", path, title)
     standard_tags: dict[str, str] = {}
     custom_tags: dict[str, str] = {}
-    # To add custom information to the tags
-    # custom_tags["Text to the left side"] = "Text to the right side"
 
-    if config.tag:
+    if config.tag and config.tag_group_name:
         custom_tags["Group"] = config.tag
     description = getattr(title, "description", None)
     if description:
@@ -215,12 +296,6 @@ def tag_file(path: Path, title: Title, tmdb_id: Optional[int] | None = None) -> 
                 truncated = truncated.rsplit(" ", 1)[0]
             description = truncated + "..."
         custom_tags["Description"] = description
-
-    api_key = _api_key()
-    if not api_key:
-        log.debug("No TMDB API key set; applying basic tags only")
-        _apply_tags(path, custom_tags)
-        return
 
     if isinstance(title, Movie):
         kind = "movie"
@@ -234,32 +309,60 @@ def tag_file(path: Path, title: Title, tmdb_id: Optional[int] | None = None) -> 
         _apply_tags(path, custom_tags)
         return
 
-    tmdb_title: Optional[str] = None
-    if tmdb_id is None:
-        tmdb_id, tmdb_title = search_tmdb(name, year, kind)
-        log.debug("Search result: %r (ID %s)", tmdb_title, tmdb_id)
-        if not tmdb_id or not tmdb_title or not fuzzy_match(tmdb_title, name):
-            log.debug("TMDB search did not match; skipping external ID lookup")
+    if config.tag_imdb_tmdb:
+        # If tmdb_id is provided (via --tmdb), skip Simkl and use TMDB directly
+        if tmdb_id is not None:
+            log.debug("Using provided TMDB ID %s for tags", tmdb_id)
+        else:
+            # Try Simkl first for automatic lookup
+            simkl_data, simkl_title, simkl_tmdb_id = search_simkl(name, year, kind)
+
+            if simkl_data and simkl_title and fuzzy_match(simkl_title, name):
+                log.debug("Using Simkl data for tags")
+                if simkl_tmdb_id:
+                    tmdb_id = simkl_tmdb_id
+
+                show_ids = simkl_data.get("show", {}).get("ids", {})
+                if show_ids.get("imdb"):
+                    standard_tags["IMDB"] = f"https://www.imdb.com/title/{show_ids['imdb']}"
+                if show_ids.get("tvdb"):
+                    standard_tags["TVDB"] = f"https://thetvdb.com/dereferrer/series/{show_ids['tvdb']}"
+                if show_ids.get("tmdbtv"):
+                    standard_tags["TMDB"] = f"https://www.themoviedb.org/tv/{show_ids['tmdbtv']}"
+
+        # Use TMDB API for additional metadata (either from provided ID or Simkl lookup)
+        api_key = _api_key()
+        if not api_key:
+            log.debug("No TMDB API key set; applying basic tags only")
             _apply_tags(path, custom_tags)
             return
 
-    tmdb_url = f"https://www.themoviedb.org/{'movie' if kind == 'movie' else 'tv'}/{tmdb_id}"
-    standard_tags["TMDB"] = tmdb_url
-    try:
-        ids = external_ids(tmdb_id, kind)
-    except requests.RequestException as exc:
-        log.debug("Failed to fetch external IDs: %s", exc)
-        ids = {}
-    else:
-        log.debug("External IDs found: %s", ids)
+        tmdb_title: Optional[str] = None
+        if tmdb_id is None:
+            tmdb_id, tmdb_title = search_tmdb(name, year, kind)
+            log.debug("TMDB search result: %r (ID %s)", tmdb_title, tmdb_id)
+            if not tmdb_id or not tmdb_title or not fuzzy_match(tmdb_title, name):
+                log.debug("TMDB search did not match; skipping external ID lookup")
+                _apply_tags(path, custom_tags)
+                return
 
-    imdb_id = ids.get("imdb_id")
-    if imdb_id:
-        standard_tags["IMDB"] = f"https://www.imdb.com/title/{imdb_id}"
-    tvdb_id = ids.get("tvdb_id")
-    if tvdb_id:
-        tvdb_prefix = "movies" if kind == "movie" else "series"
-        standard_tags["TVDB"] = f"https://thetvdb.com/dereferrer/{tvdb_prefix}/{tvdb_id}"
+        tmdb_url = f"https://www.themoviedb.org/{'movie' if kind == 'movie' else 'tv'}/{tmdb_id}"
+        standard_tags["TMDB"] = tmdb_url
+        try:
+            ids = external_ids(tmdb_id, kind)
+        except requests.RequestException as exc:
+            log.debug("Failed to fetch external IDs: %s", exc)
+            ids = {}
+        else:
+            log.debug("External IDs found: %s", ids)
+
+        imdb_id = ids.get("imdb_id")
+        if imdb_id:
+            standard_tags["IMDB"] = f"https://www.imdb.com/title/{imdb_id}"
+        tvdb_id = ids.get("tvdb_id")
+        if tvdb_id:
+            tvdb_prefix = "movies" if kind == "movie" else "series"
+            standard_tags["TVDB"] = f"https://thetvdb.com/dereferrer/{tvdb_prefix}/{tvdb_id}"
 
     merged_tags = {
         **custom_tags,
@@ -269,6 +372,8 @@ def tag_file(path: Path, title: Title, tmdb_id: Optional[int] | None = None) -> 
 
 
 __all__ = [
+    "search_simkl",
+    "search_show_info",
     "search_tmdb",
     "get_title",
     "get_year",
