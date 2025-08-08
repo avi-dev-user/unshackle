@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2025-08-08
+
+### Added
+
+- **Title Caching System**: Intelligent title caching to reduce redundant API calls
+  - Configurable title caching with 30-minute default cache duration
+  - 24-hour fallback cache on API failures for improved reliability
+  - Region-aware caching to handle geo-restricted content properly
+  - SHA256 hashing for cache keys to handle complex title IDs
+  - Added `--no-cache` CLI flag to bypass caching when needed
+  - Added `--reset-cache` CLI flag to clear existing cache data
+  - New cache configuration variables in config system
+  - Documented caching options in example configuration file
+  - Significantly improves performance when debugging or modifying CLI parameters
+
 ## [1.4.0] - 2025-08-05
 
 ### Added
