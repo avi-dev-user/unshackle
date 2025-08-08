@@ -57,7 +57,7 @@ class Vaults:
         """Add a KID:KEY to all Vaults, optionally with an exclusion."""
         success = 0
         for vault in self.vaults:
-            if vault != excluding:
+            if vault != excluding and not vault.no_push:
                 try:
                     success += vault.add_key(self.service, kid, key)
                 except (PermissionError, NotImplementedError):
@@ -68,13 +68,15 @@ class Vaults:
         """
         Add multiple KID:KEYs to all Vaults. Duplicate Content Keys are skipped.
         PermissionErrors when the user cannot create Tables are absorbed and ignored.
+        Vaults with no_push=True are skipped.
         """
         success = 0
         for vault in self.vaults:
-            try:
-                success += bool(vault.add_keys(self.service, kid_keys))
-            except (PermissionError, NotImplementedError):
-                pass
+            if not vault.no_push:
+                try:
+                    success += bool(vault.add_keys(self.service, kid_keys))
+                except (PermissionError, NotImplementedError):
+                    pass
         return success
 
 

@@ -18,7 +18,15 @@ class InsertResult(Enum):
 class HTTP(Vault):
     """Key Vault using HTTP API with support for both query parameters and JSON payloads."""
 
-    def __init__(self, name: str, host: str, password: str, username: Optional[str] = None, api_mode: str = "query"):
+    def __init__(
+        self,
+        name: str,
+        host: str,
+        password: str,
+        username: Optional[str] = None,
+        api_mode: str = "query",
+        no_push: bool = False,
+    ):
         """
         Initialize HTTP Vault.
 
@@ -28,8 +36,9 @@ class HTTP(Vault):
             password: Password for query mode or API token for json mode
             username: Username (required for query mode, ignored for json mode)
             api_mode: "query" for query parameters or "json" for JSON API
+            no_push: If True, this vault will not receive pushed keys
         """
-        super().__init__(name)
+        super().__init__(name, no_push)
         self.url = host
         self.password = password
         self.username = username

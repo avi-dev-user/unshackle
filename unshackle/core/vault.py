@@ -4,8 +4,9 @@ from uuid import UUID
 
 
 class Vault(metaclass=ABCMeta):
-    def __init__(self, name: str):
+    def __init__(self, name: str, no_push: bool = False):
         self.name = name
+        self.no_push = no_push
 
     def __str__(self) -> str:
         return f"{self.name} {type(self).__name__}"

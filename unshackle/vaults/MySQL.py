@@ -12,12 +12,12 @@ from unshackle.core.vault import Vault
 class MySQL(Vault):
     """Key Vault using a remotely-accessed mysql database connection."""
 
-    def __init__(self, name: str, host: str, database: str, username: str, **kwargs):
+    def __init__(self, name: str, host: str, database: str, username: str, no_push: bool = False, **kwargs):
         """
         All extra arguments provided via **kwargs will be sent to pymysql.connect.
         This can be used to provide more specific connection information.
         """
-        super().__init__(name)
+        super().__init__(name, no_push)
         self.slug = f"{host}:{database}:{username}"
         self.conn_factory = ConnectionFactory(
             dict(host=host, db=database, user=username, cursorclass=DictCursor, **kwargs)

@@ -101,6 +101,8 @@ remote_cdm:
     secret: secret_key
 
 # Key Vaults store your obtained Content Encryption Keys (CEKs)
+# Use 'no_push: true' to prevent a vault from receiving pushed keys
+# while still allowing it to provide keys when requested
 key_vaults:
   - type: SQLite
     name: Local
@@ -110,6 +112,7 @@ key_vaults:
   #   name: "Remote Vault"
   #   uri: "https://key-vault.example.com"
   #   token: "secret_token"
+  #   no_push: true  # This vault will only provide keys, not receive them
   # - type: MySQL
   #   name: "MySQL Vault"
   #   host: "127.0.0.1"
@@ -117,6 +120,7 @@ key_vaults:
   #   database: vault
   #   username: user
   #   password: pass
+  #   no_push: false  # Default behavior - vault both provides and receives keys
 
 # Choose what software to use to download data
 downloader: aria2c

@@ -10,8 +10,8 @@ from unshackle.core.vault import Vault
 class API(Vault):
     """Key Vault using a simple RESTful HTTP API call."""
 
-    def __init__(self, name: str, uri: str, token: str):
-        super().__init__(name)
+    def __init__(self, name: str, uri: str, token: str, no_push: bool = False):
+        super().__init__(name, no_push)
         self.uri = uri.rstrip("/")
         self.session = Session()
         self.session.headers.update({"User-Agent": f"unshackle v{__version__}"})

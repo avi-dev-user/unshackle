@@ -12,8 +12,8 @@ from unshackle.core.vault import Vault
 class SQLite(Vault):
     """Key Vault using a locally-accessed sqlite DB file."""
 
-    def __init__(self, name: str, path: Union[str, Path]):
-        super().__init__(name)
+    def __init__(self, name: str, path: Union[str, Path], no_push: bool = False):
+        super().__init__(name, no_push)
         self.path = Path(path).expanduser()
         # TODO: Use a DictCursor or such to get fetches as dict?
         self.conn_factory = ConnectionFactory(self.path)
