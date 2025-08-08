@@ -19,6 +19,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - New cache configuration variables in config system
   - Documented caching options in example configuration file
   - Significantly improves performance when debugging or modifying CLI parameters
+- **Enhanced Tagging Configuration**: New options for customizing tag behavior
+  - Added `tag_group_name` config option to control group name inclusion in tags
+  - Added `tag_imdb_tmdb` config option to control IMDB/TMDB details in tags
+  - Added Simkl API endpoint support as fallback when no TMDB API key is provided
+  - Enhanced tag_file function to prioritize provided TMDB ID when `--tmdb` flag is used
+  - Improved TMDB ID handling with better prioritization logic
+
+### Changed
+
+- **Language Selection Enhancement**: Improved default language handling
+  - Updated language option default to 'orig' when no `-l` flag is set
+  - Avoids hardcoded 'en' default and respects original content language
+- **Tagging Logic Improvements**: Simplified and enhanced tagging functionality
+  - Simplified Simkl search logic with soft-fail when no results found
+  - Enhanced tag_file function with better TMDB ID prioritization
+  - Improved error handling in tagging operations
+
+### Fixed
+
+- **Subtitle Processing**: Enhanced subtitle filtering for edge cases
+  - Fixed ValueError in subtitle filtering for multiple colons in time references
+  - Improved handling of subtitles containing complex time formatting
+  - Better error handling for malformed subtitle timestamps
+
+### Removed
+
+- **Docker Support**: Removed Docker configuration from repository
+  - Removed Dockerfile and .dockerignore files
+  - Cleaned up README.md Docker-related documentation
+  - Focuses on direct installation methods
 
 ## [1.4.0] - 2025-08-05
 
