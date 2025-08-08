@@ -153,6 +153,13 @@ class dl:
         default=[],
         help="Language wanted for Video, you would use this if the video language doesn't match the audio.",
     )
+    @click.option(
+        "-al",
+        "--a-lang",
+        type=LANGUAGE_RANGE,
+        default=[],
+        help="Language wanted for Audio, overrides -l/--lang for audio tracks.",
+    )
     @click.option("-sl", "--s-lang", type=LANGUAGE_RANGE, default=["all"], help="Language wanted for Subtitles.")
     @click.option("-fs", "--forced-subs", is_flag=True, default=False, help="Include forced subtitle tracks.")
     @click.option(
@@ -413,6 +420,7 @@ class dl:
         wanted: list[str],
         lang: list[str],
         v_lang: list[str],
+        a_lang: list[str],
         s_lang: list[str],
         forced_subs: bool,
         sub_format: Optional[Subtitle.Codec],
@@ -588,8 +596,9 @@ class dl:
                         if language not in processed_video_sort_lang:
                             processed_video_sort_lang.append(language)
 
+                audio_sort_lang = a_lang or lang
                 processed_audio_sort_lang = []
-                for language in lang:
+                for language in audio_sort_lang:
                     if language == "orig":
                         if title.language:
                             orig_lang = str(title.language) if hasattr(title.language, "__str__") else title.language
@@ -753,9 +762,10 @@ class dl:
                         if not title.tracks.audio:
                             self.log.error(f"There's no {abitrate}kbps Audio Track...")
                             sys.exit(1)
-                    if lang:
+                    audio_languages = a_lang or lang
+                    if audio_languages:
                         processed_lang = []
-                        for language in lang:
+                        for language in audio_languages:
                             if language == "orig":
                                 if title.language:
                                     orig_lang = (
