@@ -792,7 +792,7 @@ class dl:
                                 selected_audio.append(highest_quality)
                             title.tracks.audio = selected_audio
                         elif "all" not in processed_lang:
-                            per_language = 0 if len(processed_lang) > 1 else 1
+                            per_language = 1
                             title.tracks.audio = title.tracks.by_language(
                                 title.tracks.audio, processed_lang, per_language=per_language
                             )
