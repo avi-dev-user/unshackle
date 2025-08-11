@@ -584,11 +584,24 @@ class HLS:
         if DOWNLOAD_LICENCE_ONLY.is_set():
             return
 
-        if segment_save_dir.exists():
-            segment_save_dir.rmdir()
+        def find_segments_recursively(directory: Path) -> list[Path]:
+            """Find all segment files recursively in any directory structure created by downloaders."""
+            segments = []
+
+            # First check direct files in the directory
+            if directory.exists():
+                segments.extend([x for x in directory.iterdir() if x.is_file() and x.suffix in {".ts", ".mp4", ".m4s"}])
+
+                # If no direct files, recursively search subdirectories
+                if not segments:
+                    for subdir in directory.iterdir():
+                        if subdir.is_dir():
+                            segments.extend(find_segments_recursively(subdir))
+
+            return sorted(segments)
 
         # finally merge all the discontinuity save files together to the final path
-        segments_to_merge = [x for x in sorted(save_dir.iterdir()) if x.is_file()]
+        segments_to_merge = find_segments_recursively(save_dir)
         if len(segments_to_merge) == 1:
             shutil.move(segments_to_merge[0], save_path)
         else:
@@ -603,8 +616,6 @@ class HLS:
                         f.flush()
                         discontinuity_file.unlink()
 
-        save_dir.rmdir()
-
         progress(downloaded="Downloaded")
 
         track.path = save_path
@@ -613,40 +624,75 @@ class HLS:
     @staticmethod
     def merge_segments(segments: list[Path], save_path: Path) -> int:
         """
-        Concatenate Segments by first demuxing with FFmpeg.
+        Concatenate Segments using FFmpeg concat with binary fallback.
 
         Returns the file size of the merged file.
         """
-        if not binaries.FFMPEG:
-            raise EnvironmentError("FFmpeg executable was not found but is required to merge HLS segments.")
-
-        demuxer_file = segments[0].parent / "ffmpeg_concat_demuxer.txt"
-        demuxer_file.write_text("\n".join([f"file '{segment}'" for segment in segments]))
-
-        subprocess.check_call(
-            [
-                binaries.FFMPEG,
-                "-hide_banner",
-                "-loglevel",
-                "panic",
-                "-f",
-                "concat",
-                "-safe",
-                "0",
-                "-i",
-                demuxer_file,
-                "-map",
-                "0",
-                "-c",
-                "copy",
-                save_path,
-            ]
-        )
-        demuxer_file.unlink()
-
+        # Track segment directories for cleanup
+        segment_dirs = set()
         for segment in segments:
-            segment.unlink()
+            # Track all parent directories that contain segments
+            current_dir = segment.parent
+            while current_dir.name and "_segments" in str(current_dir):
+                segment_dirs.add(current_dir)
+                current_dir = current_dir.parent
 
+        def cleanup_segments_and_dirs():
+            """Clean up segments and directories after successful merge."""
+            for segment in segments:
+                segment.unlink(missing_ok=True)
+            for segment_dir in segment_dirs:
+                if segment_dir.exists():
+                    try:
+                        shutil.rmtree(segment_dir)
+                    except OSError:
+                        pass  # Directory cleanup failed, but merge succeeded
+
+        # Try FFmpeg concat first (preferred method)
+        if binaries.FFMPEG:
+            try:
+                demuxer_file = save_path.parent / f"ffmpeg_concat_demuxer_{save_path.stem}.txt"
+                demuxer_file.write_text("\n".join([f"file '{segment.absolute()}'" for segment in segments]))
+
+                subprocess.check_call(
+                    [
+                        binaries.FFMPEG,
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-f",
+                        "concat",
+                        "-safe",
+                        "0",
+                        "-i",
+                        demuxer_file,
+                        "-map",
+                        "0",
+                        "-c",
+                        "copy",
+                        save_path,
+                    ],
+                    timeout=300,  # 5 minute timeout
+                )
+                demuxer_file.unlink(missing_ok=True)
+                cleanup_segments_and_dirs()
+                return save_path.stat().st_size
+
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
+                # FFmpeg failed, clean up demuxer file and fall back to binary concat
+                logging.getLogger("HLS").debug(f"FFmpeg concat failed ({e}), falling back to binary concatenation")
+                demuxer_file.unlink(missing_ok=True)
+                # Remove partial output file if it exists
+                save_path.unlink(missing_ok=True)
+
+        # Fallback: Binary concatenation
+        logging.getLogger("HLS").debug(f"Using binary concatenation for {len(segments)} segments")
+        with open(save_path, "wb") as output_file:
+            for segment in segments:
+                with open(segment, "rb") as segment_file:
+                    output_file.write(segment_file.read())
+
+        cleanup_segments_and_dirs()
         return save_path.stat().st_size
 
     @staticmethod
