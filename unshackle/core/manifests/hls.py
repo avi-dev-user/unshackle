@@ -4,6 +4,7 @@ import base64
 import html
 import json
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -590,7 +591,7 @@ class HLS:
 
             # First check direct files in the directory
             if directory.exists():
-                segments.extend([x for x in directory.iterdir() if x.is_file() and x.suffix in {".ts", ".mp4", ".m4s"}])
+                segments.extend([x for x in directory.iterdir() if x.is_file()])
 
                 # If no direct files, recursively search subdirectories
                 if not segments:
@@ -614,7 +615,16 @@ class HLS:
                         discontinuity_data = discontinuity_file.read_bytes()
                         f.write(discontinuity_data)
                         f.flush()
+                        os.fsync(f.fileno())
                         discontinuity_file.unlink()
+
+        # Clean up empty segment directory
+        if save_dir.exists() and save_dir.name.endswith("_segments"):
+            try:
+                save_dir.rmdir()
+            except OSError:
+                # Directory might not be empty, try removing recursively
+                shutil.rmtree(save_dir, ignore_errors=True)
 
         progress(downloaded="Downloaded")
 
