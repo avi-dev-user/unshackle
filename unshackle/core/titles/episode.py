@@ -81,7 +81,7 @@ class Episode(Title):
     def __str__(self) -> str:
         return "{title}{year} S{season:02}E{number:02} {name}".format(
             title=self.title,
-            year=f" {self.year}" if self.year else "",
+            year=f" {self.year}" if self.year and config.series_year else "",
             season=self.season,
             number=self.number,
             name=self.name or "",
@@ -95,13 +95,13 @@ class Episode(Title):
         # Title [Year] SXXEXX Name (or Title [Year] SXX if folder)
         if folder:
             name = f"{self.title}"
-            if self.year:
+            if self.year and config.series_year:
                 name += f" {self.year}"
             name += f" S{self.season:02}"
         else:
             name = "{title}{year} S{season:02}E{number:02} {name}".format(
                 title=self.title.replace("$", "S"),  # e.g., Arli$$
-                year=f" {self.year}" if self.year else "",
+                year=f" {self.year}" if self.year and config.series_year else "",
                 season=self.season,
                 number=self.number,
                 name=self.name or "",
@@ -197,7 +197,7 @@ class Series(SortedKeyList, ABC):
     def __str__(self) -> str:
         if not self:
             return super().__str__()
-        return self[0].title + (f" ({self[0].year})" if self[0].year else "")
+        return self[0].title + (f" ({self[0].year})" if self[0].year and config.series_year else "")
 
     def tree(self, verbose: bool = False) -> Tree:
         seasons = Counter(x.season for x in self)

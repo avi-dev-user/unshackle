@@ -15,6 +15,11 @@ set_terminal_bg: false
 #  false for style - Prime Suspect S07E01 The Final Act - Part One
 scene_naming: true
 
+# Whether to include the year in series names for episodes and folders (default: true)
+#  true for style - Show Name (2023) S01E01 Episode Name  
+#  false for style - Show Name S01E01 Episode Name
+series_year: true
+
 # Check for updates from GitHub repository on startup (default: true)
 update_checks: true
 
