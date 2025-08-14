@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2025-08-14
+
+### Added
+
+- **Session Management for API Requests**: Enhanced API reliability with retry logic
+  - Implemented session management for tags functionality with automatic retry mechanisms
+  - Improved API request stability and error handling
+- **Series Year Configuration**: New `series_year` option for title naming control
+  - Added configurable `series_year` option to control year inclusion in series titles
+  - Enhanced YAML configuration with series year handling options
+- **Audio Language Override**: New audio language selection option
+  - Added `audio_language` option to override default language selection for audio tracks
+  - Provides more granular control over audio track selection
+- **Vault Key Reception Control**: Enhanced vault security options
+  - Added `no_push` option to Vault and its subclasses to control key reception
+  - Improved key management security and flexibility
+
+### Changed
+
+- **HLS Segment Processing**: Enhanced segment retrieval and merging capabilities
+  - Enhanced segment retrieval to allow all file types for better compatibility
+  - Improved segment merging with recursive file search and fallback to binary concatenation
+  - Fixed issues with VTT files from HLS not being found correctly due to format changes
+  - Added cleanup of empty segment directories after processing
+- **Documentation**: Updated README.md with latest information
+
+### Fixed
+
+- **Audio Track Selection**: Improved per-language logic for audio tracks
+  - Adjusted `per_language` logic to ensure correct audio track selection
+  - Fixed issue where all tracks for selected language were being downloaded instead of just the intended ones
+
 ## [1.4.1] - 2025-08-08
 
 ### Added
