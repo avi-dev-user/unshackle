@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 import requests
+from requests.adapters import HTTPAdapter, Retry
 
 from unshackle.core import binaries
 from unshackle.core.config import config
@@ -23,6 +24,22 @@ HEADERS = {"User-Agent": "unshackle-tags/1.0"}
 
 
 log = logging.getLogger("TAGS")
+
+
+def _get_session() -> requests.Session:
+    """Create a requests session with retry logic for network failures."""
+    session = requests.Session()
+    session.headers.update(HEADERS)
+
+    retry = Retry(
+        total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504], allowed_methods=["GET", "POST"]
+    )
+
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+
+    return session
 
 
 def _api_key() -> Optional[str]:
@@ -59,7 +76,8 @@ def search_simkl(title: str, year: Optional[int], kind: str) -> Tuple[Optional[d
         filename += " 2160p.mkv"
 
     try:
-        resp = requests.post("https://api.simkl.com/search/file", json={"file": filename}, headers=HEADERS, timeout=30)
+        session = _get_session()
+        resp = session.post("https://api.simkl.com/search/file", json={"file": filename}, timeout=30)
         resp.raise_for_status()
         data = resp.json()
         log.debug("Simkl API response received")
@@ -139,17 +157,21 @@ def search_tmdb(title: str, year: Optional[int], kind: str) -> Tuple[Optional[in
     if year is not None:
         params["year" if kind == "movie" else "first_air_date_year"] = year
 
-    r = requests.get(
-        f"https://api.themoviedb.org/3/search/{kind}",
-        params=params,
-        headers=HEADERS,
-        timeout=30,
-    )
-    r.raise_for_status()
-    js = r.json()
-    results = js.get("results") or []
-    log.debug("TMDB returned %d results", len(results))
-    if not results:
+    try:
+        session = _get_session()
+        r = session.get(
+            f"https://api.themoviedb.org/3/search/{kind}",
+            params=params,
+            timeout=30,
+        )
+        r.raise_for_status()
+        js = r.json()
+        results = js.get("results") or []
+        log.debug("TMDB returned %d results", len(results))
+        if not results:
+            return None, None
+    except requests.RequestException as exc:
+        log.warning("Failed to search TMDB for %s: %s", title, exc)
         return None, None
 
     best_ratio = 0.0
@@ -196,10 +218,10 @@ def get_title(tmdb_id: int, kind: str) -> Optional[str]:
         return None
 
     try:
-        r = requests.get(
+        session = _get_session()
+        r = session.get(
             f"https://api.themoviedb.org/3/{kind}/{tmdb_id}",
             params={"api_key": api_key},
-            headers=HEADERS,
             timeout=30,
         )
         r.raise_for_status()
@@ -219,10 +241,10 @@ def get_year(tmdb_id: int, kind: str) -> Optional[int]:
         return None
 
     try:
-        r = requests.get(
+        session = _get_session()
+        r = session.get(
             f"https://api.themoviedb.org/3/{kind}/{tmdb_id}",
             params={"api_key": api_key},
-            headers=HEADERS,
             timeout=30,
         )
         r.raise_for_status()
@@ -243,16 +265,21 @@ def external_ids(tmdb_id: int, kind: str) -> dict:
         return {}
     url = f"https://api.themoviedb.org/3/{kind}/{tmdb_id}/external_ids"
     log.debug("Fetching external IDs for %s %s", kind, tmdb_id)
-    r = requests.get(
-        url,
-        params={"api_key": api_key},
-        headers=HEADERS,
-        timeout=30,
-    )
-    r.raise_for_status()
-    js = r.json()
-    log.debug("External IDs response: %s", js)
-    return js
+
+    try:
+        session = _get_session()
+        r = session.get(
+            url,
+            params={"api_key": api_key},
+            timeout=30,
+        )
+        r.raise_for_status()
+        js = r.json()
+        log.debug("External IDs response: %s", js)
+        return js
+    except requests.RequestException as exc:
+        log.warning("Failed to fetch external IDs for %s %s: %s", kind, tmdb_id, exc)
+        return {}
 
 
 def _apply_tags(path: Path, tags: dict[str, str]) -> None:
