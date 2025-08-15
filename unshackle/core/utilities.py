@@ -242,6 +242,61 @@ def get_ip_info(session: Optional[requests.Session] = None) -> dict:
     return (session or requests.Session()).get("https://ipinfo.io/json").json()
 
 
+def get_cached_ip_info(session: Optional[requests.Session] = None) -> Optional[dict]:
+    """
+    Get IP location information with 24-hour caching and fallback providers.
+
+    This function uses a global cache to avoid repeated API calls when the IP
+    hasn't changed. Should only be used for local IP checks, not for proxy verification.
+
+    Args:
+        session: Optional requests session (usually without proxy for local IP)
+
+    Returns:
+        Dict with IP info including 'country' key, or None if all providers fail
+    """
+    from unshackle.core.cacher import Cacher
+
+    cache = Cacher("global").get("ip_info")
+
+    if cache and not cache.expired:
+        return cache.data
+
+    providers = [
+        "https://ipinfo.io/json",
+        "https://ipapi.co/json",
+    ]
+
+    session = session or requests.Session()
+
+    for provider_url in providers:
+        try:
+            response = session.get(provider_url, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+
+                normalized_data = {}
+
+                if "country" in data:
+                    normalized_data = data
+                elif "country_code" in data:
+                    normalized_data = {
+                        "country": data.get("country_code", "").lower(),
+                        "region": data.get("region", ""),
+                        "city": data.get("city", ""),
+                        "ip": data.get("ip", ""),
+                    }
+
+                if normalized_data and "country" in normalized_data:
+                    cache.set(normalized_data, expiration=86400)
+                    return normalized_data
+
+        except Exception:
+            continue
+
+    return None
+
+
 def time_elapsed_since(start: float) -> str:
     """
     Get time elapsed since a timestamp as a string.

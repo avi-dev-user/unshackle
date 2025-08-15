@@ -16,7 +16,7 @@ set_terminal_bg: false
 scene_naming: true
 
 # Whether to include the year in series names for episodes and folders (default: true)
-#  true for style - Show Name (2023) S01E01 Episode Name  
+#  true for style - Show Name (2023) S01E01 Episode Name
 #  false for style - Show Name S01E01 Episode Name
 series_year: true
 

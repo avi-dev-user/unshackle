@@ -24,7 +24,7 @@ from unshackle.core.search_result import SearchResult
 from unshackle.core.title_cacher import TitleCacher, get_account_hash, get_region_from_proxy
 from unshackle.core.titles import Title_T, Titles_T
 from unshackle.core.tracks import Chapters, Tracks
-from unshackle.core.utilities import get_ip_info
+from unshackle.core.utilities import get_cached_ip_info, get_ip_info
 
 
 class Service(metaclass=ABCMeta):
@@ -60,18 +60,24 @@ class Service(metaclass=ABCMeta):
                 # don't override the explicit proxy set by the user, even if they may be geoblocked
                 with console.status("Checking if current region is Geoblocked...", spinner="dots"):
                     if self.GEOFENCE:
-                        # no explicit proxy, let's get one to GEOFENCE if needed
-                        current_region = get_ip_info(self.session)["country"].lower()
-                        if any(x.lower() == current_region for x in self.GEOFENCE):
-                            self.log.info("Service is not Geoblocked in your region")
-                        else:
-                            requested_proxy = self.GEOFENCE[0]  # first is likely main region
-                            self.log.info(f"Service is Geoblocked in your region, getting a Proxy to {requested_proxy}")
-                            for proxy_provider in ctx.obj.proxy_providers:
-                                proxy = proxy_provider.get_proxy(requested_proxy)
-                                if proxy:
-                                    self.log.info(f"Got Proxy from {proxy_provider.__class__.__name__}")
-                                    break
+                        # Service has geofence - need fresh IP check to determine if proxy needed
+                        try:
+                            current_region = get_ip_info(self.session)["country"].lower()
+                            if any(x.lower() == current_region for x in self.GEOFENCE):
+                                self.log.info("Service is not Geoblocked in your region")
+                            else:
+                                requested_proxy = self.GEOFENCE[0]  # first is likely main region
+                                self.log.info(
+                                    f"Service is Geoblocked in your region, getting a Proxy to {requested_proxy}"
+                                )
+                                for proxy_provider in ctx.obj.proxy_providers:
+                                    proxy = proxy_provider.get_proxy(requested_proxy)
+                                    if proxy:
+                                        self.log.info(f"Got Proxy from {proxy_provider.__class__.__name__}")
+                                        break
+                        except Exception as e:
+                            self.log.warning(f"Failed to check geofence: {e}")
+                            current_region = None
                     else:
                         self.log.info("Service has no Geofence")
 
@@ -86,14 +92,21 @@ class Service(metaclass=ABCMeta):
                             ).decode()
                         }
                     )
-                # Store region from proxy
-                self.current_region = get_region_from_proxy(proxy)
-            else:
-                # No proxy, try to get current region
+                # Always verify proxy IP - proxies can change exit nodes
                 try:
-                    ip_info = get_ip_info(self.session)
+                    proxy_ip_info = get_ip_info(self.session)
+                    self.current_region = proxy_ip_info.get("country", "").lower() if proxy_ip_info else None
+                except Exception as e:
+                    self.log.warning(f"Failed to verify proxy IP: {e}")
+                    # Fallback to extracting region from proxy config
+                    self.current_region = get_region_from_proxy(proxy)
+            else:
+                # No proxy, use cached IP info for title caching (non-critical)
+                try:
+                    ip_info = get_cached_ip_info(self.session)
                     self.current_region = ip_info.get("country", "").lower() if ip_info else None
-                except Exception:
+                except Exception as e:
+                    self.log.debug(f"Failed to get cached IP info: {e}")
                     self.current_region = None
 
     # Optional Abstract functions
