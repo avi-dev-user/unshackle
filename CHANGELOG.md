@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3] - 2025-08-20
+
+### Added
+
+- Cached IP info helper for region detection
+  - New `get_cached_ip_info()` with 24h cache and provider rotation (ipinfo/ipapi) with 429 handling.
+  - Reduces external calls and stabilizes non-proxy region lookups for caching/logging.
+
+### Changed
+
+- DRM decryption selection is fully configuration-driven
+  - Widevine and PlayReady now select the decrypter based solely on `decryption` in YAML (including per-service mapping).
+  - Shaka Packager remains the default decrypter when not specified.
+  - `dl.py` logs the chosen tool based on the resolved configuration.
+- Geofencing and proxy verification improvements
+  - Safer geofence checks with error handling and clearer logs.
+  - Always verify proxy exit region via live IP lookup; fallback to proxy parsing on failure.
+- Example config updated to default to Shaka
+  - `unshackle.yaml`/example now sets `decryption.default: shaka` (service overrides still supported).
+
+### Removed
+
+- Deprecated parameter `use_mp4decrypt`
+  - Removed from `Widevine.decrypt()` and `PlayReady.decrypt()` and all callsites.
+  - Internal naming switched from mp4decrypt-specific flags to generic `decrypter` selection.
+
 ## [1.4.2] - 2025-08-14
 
 ### Added
