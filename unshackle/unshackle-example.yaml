@@ -28,9 +28,9 @@ update_check_interval: 24
 
 # Title caching configuration
 # Cache title metadata to reduce redundant API calls
-title_cache_enabled: true  # Enable/disable title caching globally (default: true)
-title_cache_time: 1800  # Cache duration in seconds (default: 1800 = 30 minutes)
-title_cache_max_retention: 86400  # Maximum cache retention for fallback when API fails (default: 86400 = 24 hours)
+title_cache_enabled: true # Enable/disable title caching globally (default: true)
+title_cache_time: 1800 # Cache duration in seconds (default: 1800 = 30 minutes)
+title_cache_max_retention: 86400 # Maximum cache retention for fallback when API fails (default: 86400 = 24 hours)
 
 # Muxing configuration
 muxing:
@@ -156,7 +156,6 @@ curl_impersonate:
 
 # Pre-define default options and switches of the dl command
 dl:
-  best: true
   sub_format: srt
   downloads: 4
   workers: 16
@@ -241,14 +240,14 @@ proxy_providers:
     username: username_from_service_credentials
     password: password_from_service_credentials
     server_map:
-      - us: 12 # force US server #12 for US proxies
+      us: 12 # force US server #12 for US proxies
   surfsharkvpn:
     username: your_surfshark_service_username # Service credentials from https://my.surfshark.com/vpn/manual-setup/main/openvpn
     password: your_surfshark_service_password # Service credentials (not your login password)
     server_map:
-      - us: 3844 # force US server #3844 for US proxies
-      - gb: 2697 # force GB server #2697 for GB proxies
-      - au: 4621 # force AU server #4621 for AU proxies
+      us: 3844 # force US server #3844 for US proxies
+      gb: 2697 # force GB server #2697 for GB proxies
+      au: 4621 # force AU server #4621 for AU proxies
   basic:
     GB:
       - "socks5://username:password@bhx.socks.ipvanish.com:1080" # 1 (Birmingham)
