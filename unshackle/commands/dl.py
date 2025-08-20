@@ -248,7 +248,9 @@ class dl:
     )
     @click.option("--downloads", type=int, default=1, help="Amount of tracks to download concurrently.")
     @click.option("--no-cache", "no_cache", is_flag=True, default=False, help="Bypass title cache for this download.")
-    @click.option("--reset-cache", "reset_cache", is_flag=True, default=False, help="Clear title cache before fetching.")
+    @click.option(
+        "--reset-cache", "reset_cache", is_flag=True, default=False, help="Clear title cache before fetching."
+    )
     @click.pass_context
     def cli(ctx: click.Context, **kwargs: Any) -> dl:
         return dl(ctx, **kwargs)
@@ -293,6 +295,9 @@ class dl:
 
         if getattr(config, "downloader_map", None):
             config.downloader = config.downloader_map.get(self.service, config.downloader)
+
+        if getattr(config, "decryption_map", None):
+            config.decryption = config.decryption_map.get(self.service, config.decryption)
 
         with console.status("Loading DRM CDM...", spinner="dots"):
             try:
@@ -531,7 +536,7 @@ class dl:
                 else:
                     console.print(Padding("Search -> [bright_black]No match found[/]", (0, 5)))
 
-            if self.tmdb_id and getattr(self, 'search_source', None) != 'simkl':
+            if self.tmdb_id and getattr(self, "search_source", None) != "simkl":
                 kind = "tv" if isinstance(title, Episode) else "movie"
                 tags.external_ids(self.tmdb_id, kind)
                 if self.tmdb_year:
@@ -1001,12 +1006,7 @@ class dl:
                 # Handle DRM decryption BEFORE repacking (must decrypt first!)
                 service_name = service.__class__.__name__.upper()
                 decryption_method = config.decryption_map.get(service_name, config.decryption)
-                use_mp4decrypt = decryption_method.lower() == "mp4decrypt"
-
-                if use_mp4decrypt:
-                    decrypt_tool = "mp4decrypt"
-                else:
-                    decrypt_tool = "Shaka Packager"
+                decrypt_tool = "mp4decrypt" if decryption_method.lower() == "mp4decrypt" else "Shaka Packager"
 
                 drm_tracks = [track for track in title.tracks if track.drm]
                 if drm_tracks:
@@ -1015,7 +1015,7 @@ class dl:
                         for track in drm_tracks:
                             drm = track.get_drm_for_cdm(self.cdm)
                             if drm and hasattr(drm, "decrypt"):
-                                drm.decrypt(track.path, use_mp4decrypt=use_mp4decrypt)
+                                drm.decrypt(track.path)
                                 has_decrypted = True
                                 events.emit(events.Types.TRACK_REPACKED, track=track)
                             else:

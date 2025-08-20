@@ -253,12 +253,11 @@ class PlayReady:
         if not self.content_keys:
             raise PlayReady.Exceptions.EmptyLicense("No Content Keys were within the License")
 
-    def decrypt(self, path: Path, use_mp4decrypt: bool = False) -> None:
+    def decrypt(self, path: Path) -> None:
         """
         Decrypt a Track with PlayReady DRM.
         Args:
             path: Path to the encrypted file to decrypt
-            use_mp4decrypt: If True, use mp4decrypt instead of Shaka Packager
         Raises:
             EnvironmentError if the required decryption executable could not be found.
             ValueError if the track has not yet been downloaded.
@@ -270,7 +269,9 @@ class PlayReady:
         if not path or not path.exists():
             raise ValueError("Tried to decrypt a file that does not exist.")
 
-        if use_mp4decrypt:
+        decrypter = str(getattr(config, "decryption", "")).lower()
+
+        if decrypter == "mp4decrypt":
             return self._decrypt_with_mp4decrypt(path)
         else:
             return self._decrypt_with_shaka_packager(path)
