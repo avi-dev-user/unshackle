@@ -11,6 +11,7 @@ from typing import Optional, Tuple
 
 import requests
 from requests.adapters import HTTPAdapter, Retry
+from xml.sax.saxutils import escape
 
 from unshackle.core import binaries
 from unshackle.core.config import config
@@ -289,9 +290,9 @@ def _apply_tags(path: Path, tags: dict[str, str]) -> None:
         log.debug("mkvpropedit not found on PATH; skipping tags")
         return
     log.debug("Applying tags to %s: %s", path, tags)
-    xml_lines = ["<?xml version='1.0' encoding='UTF-8'?>", "<Tags>", "  <Tag>", "    <Targets/>"]
+    xml_lines = ['<?xml version="1.0" encoding="UTF-8"?>', "<Tags>", "  <Tag>", "    <Targets/>"]
     for name, value in tags.items():
-        xml_lines.append(f"    <Simple><Name>{name}</Name><String>{value}</String></Simple>")
+        xml_lines.append(f"    <Simple><Name>{escape(name)}</Name><String>{escape(value)}</String></Simple>")
     xml_lines.extend(["  </Tag>", "</Tags>"])
     with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False) as f:
         f.write("\n".join(xml_lines))
@@ -351,11 +352,11 @@ def tag_file(path: Path, title: Title, tmdb_id: Optional[int] | None = None) -> 
 
                 show_ids = simkl_data.get("show", {}).get("ids", {})
                 if show_ids.get("imdb"):
-                    standard_tags["IMDB"] = f"https://www.imdb.com/title/{show_ids['imdb']}"
+                    standard_tags["IMDB"] = show_ids["imdb"]
                 if show_ids.get("tvdb"):
-                    standard_tags["TVDB"] = f"https://thetvdb.com/dereferrer/series/{show_ids['tvdb']}"
+                    standard_tags["TVDB"] = str(show_ids["tvdb"])
                 if show_ids.get("tmdbtv"):
-                    standard_tags["TMDB"] = f"https://www.themoviedb.org/tv/{show_ids['tmdbtv']}"
+                    standard_tags["TMDB"] = f"tv/{show_ids['tmdbtv']}"
 
         # Use TMDB API for additional metadata (either from provided ID or Simkl lookup)
         api_key = _api_key()
@@ -373,8 +374,8 @@ def tag_file(path: Path, title: Title, tmdb_id: Optional[int] | None = None) -> 
                 _apply_tags(path, custom_tags)
                 return
 
-        tmdb_url = f"https://www.themoviedb.org/{'movie' if kind == 'movie' else 'tv'}/{tmdb_id}"
-        standard_tags["TMDB"] = tmdb_url
+        prefix = "movie" if kind == "movie" else "tv"
+        standard_tags["TMDB"] = f"{prefix}/{tmdb_id}"
         try:
             ids = external_ids(tmdb_id, kind)
         except requests.RequestException as exc:
@@ -385,11 +386,10 @@ def tag_file(path: Path, title: Title, tmdb_id: Optional[int] | None = None) -> 
 
         imdb_id = ids.get("imdb_id")
         if imdb_id:
-            standard_tags["IMDB"] = f"https://www.imdb.com/title/{imdb_id}"
+            standard_tags["IMDB"] = imdb_id
         tvdb_id = ids.get("tvdb_id")
         if tvdb_id:
-            tvdb_prefix = "movies" if kind == "movie" else "series"
-            standard_tags["TVDB"] = f"https://thetvdb.com/dereferrer/{tvdb_prefix}/{tvdb_id}"
+            standard_tags["TVDB"] = str(tvdb_id)
 
     merged_tags = {
         **custom_tags,
