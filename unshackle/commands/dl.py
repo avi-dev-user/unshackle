@@ -299,21 +299,6 @@ class dl:
         if getattr(config, "decryption_map", None):
             config.decryption = config.decryption_map.get(self.service, config.decryption)
 
-        with console.status("Loading DRM CDM...", spinner="dots"):
-            try:
-                self.cdm = self.get_cdm(self.service, self.profile)
-            except ValueError as e:
-                self.log.error(f"Failed to load CDM, {e}")
-                sys.exit(1)
-
-            if self.cdm:
-                if hasattr(self.cdm, "device_type") and self.cdm.device_type.name in ["ANDROID", "CHROME"]:
-                    self.log.info(f"Loaded Widevine CDM: {self.cdm.system_id} (L{self.cdm.security_level})")
-                else:
-                    self.log.info(
-                        f"Loaded PlayReady CDM: {self.cdm.certificate_chain.get_name()} (L{self.cdm.security_level})"
-                    )
-
         with console.status("Loading Key Vaults...", spinner="dots"):
             self.vaults = Vaults(self.service)
             total_vaults = len(config.key_vaults)
@@ -351,6 +336,21 @@ class dl:
                 self.log.debug(f"Active vaults: {', '.join(vault_names)}")
             else:
                 self.log.debug("No vaults are currently active")
+
+        with console.status("Loading DRM CDM...", spinner="dots"):
+            try:
+                self.cdm = self.get_cdm(self.service, self.profile)
+            except ValueError as e:
+                self.log.error(f"Failed to load CDM, {e}")
+                sys.exit(1)
+
+            if self.cdm:
+                if hasattr(self.cdm, "device_type") and self.cdm.device_type.name in ["ANDROID", "CHROME"]:
+                    self.log.info(f"Loaded Widevine CDM: {self.cdm.system_id} (L{self.cdm.security_level})")
+                else:
+                    self.log.info(
+                        f"Loaded PlayReady CDM: {self.cdm.certificate_chain.get_name()} (L{self.cdm.security_level})"
+                    )
 
         self.proxy_providers = []
         if no_proxy:
@@ -1442,8 +1442,8 @@ class dl:
                     return Credential(*credentials)
                 return Credential.loads(credentials)  # type: ignore
 
-    @staticmethod
     def get_cdm(
+        self,
         service: str,
         profile: Optional[str] = None,
         drm: Optional[str] = None,
@@ -1478,9 +1478,26 @@ class dl:
         cdm_api = next(iter(x for x in config.remote_cdm if x["name"] == cdm_name), None)
         if cdm_api:
             is_decrypt_lab = True if cdm_api["type"] == "decrypt_labs" else False
-            del cdm_api["name"]
-            del cdm_api["type"]
-            return DecryptLabsRemoteCDM(service_name=service, **cdm_api) if is_decrypt_lab else RemoteCdm(**cdm_api)
+            if is_decrypt_lab:
+                device_type = cdm_api.get("device_type")
+                del cdm_api["name"]
+                del cdm_api["type"]
+
+                # Use the appropriate DecryptLabs CDM class based on device type
+                if device_type == "PLAYREADY" or cdm_api.get("device_name") in ["SL2", "SL3"]:
+                    from unshackle.core.cdm.decrypt_labs_remote_cdm import DecryptLabsRemotePlayReadyCDM
+
+                    # Remove unused parameters for PlayReady CDM
+                    cdm_params = cdm_api.copy()
+                    cdm_params.pop("device_type", None)
+                    cdm_params.pop("system_id", None)
+                    return DecryptLabsRemotePlayReadyCDM(service_name=service, vaults=self.vaults, **cdm_params)
+                else:
+                    return DecryptLabsRemoteCDM(service_name=service, vaults=self.vaults, **cdm_api)
+            else:
+                del cdm_api["name"]
+                del cdm_api["type"]
+                return RemoteCdm(**cdm_api)
 
         prd_path = config.directories.prds / f"{cdm_name}.prd"
         if not prd_path.is_file():

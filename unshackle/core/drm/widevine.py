@@ -185,7 +185,12 @@ class Widevine:
                 if cert and hasattr(cdm, "set_service_certificate"):
                     cdm.set_service_certificate(session_id, cert)
 
-                cdm.parse_license(session_id, licence(challenge=cdm.get_license_challenge(session_id, self.pssh)))
+                challenge = cdm.get_license_challenge(session_id, self.pssh)
+
+                if hasattr(cdm, "has_cached_keys") and cdm.has_cached_keys(session_id):
+                    pass
+                else:
+                    cdm.parse_license(session_id, licence(challenge=challenge))
 
                 self.content_keys = {key.kid: key.key.hex() for key in cdm.get_keys(session_id, "CONTENT")}
                 if not self.content_keys:
@@ -213,10 +218,15 @@ class Widevine:
                 if cert and hasattr(cdm, "set_service_certificate"):
                     cdm.set_service_certificate(session_id, cert)
 
-                cdm.parse_license(
-                    session_id,
-                    licence(session_id=session_id, challenge=cdm.get_license_challenge(session_id, self.pssh)),
-                )
+                challenge = cdm.get_license_challenge(session_id, self.pssh)
+
+                if hasattr(cdm, "has_cached_keys") and cdm.has_cached_keys(session_id):
+                    pass
+                else:
+                    cdm.parse_license(
+                        session_id,
+                        licence(session_id=session_id, challenge=challenge),
+                    )
 
                 self.content_keys = {key.kid: key.key.hex() for key in cdm.get_keys(session_id, "CONTENT")}
                 if not self.content_keys:

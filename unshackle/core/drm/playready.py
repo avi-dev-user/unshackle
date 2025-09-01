@@ -224,14 +224,59 @@ class PlayReady:
     def kids(self) -> list[UUID]:
         return self._kids
 
+    def _extract_keys_from_cdm(self, cdm: PlayReadyCdm, session_id: bytes) -> dict:
+        """Extract keys from CDM session with cross-library compatibility.
+
+        Args:
+            cdm: CDM instance
+            session_id: Session identifier
+
+        Returns:
+            Dictionary mapping KID UUIDs to hex keys
+        """
+        keys = {}
+        for key in cdm.get_keys(session_id):
+            if hasattr(key, "key_id"):
+                kid = key.key_id
+            elif hasattr(key, "kid"):
+                kid = key.kid
+            else:
+                continue
+
+            if hasattr(key, "key") and hasattr(key.key, "hex"):
+                key_hex = key.key.hex()
+            elif hasattr(key, "key") and isinstance(key.key, bytes):
+                key_hex = key.key.hex()
+            elif hasattr(key, "key") and isinstance(key.key, str):
+                key_hex = key.key
+            else:
+                continue
+
+            keys[kid] = key_hex
+        return keys
+
     def get_content_keys(self, cdm: PlayReadyCdm, certificate: Callable, licence: Callable) -> None:
         for kid in self.kids:
             if kid in self.content_keys:
                 continue
+
             session_id = cdm.open()
             try:
+                if hasattr(cdm, "set_pssh_b64") and self.pssh_b64:
+                    cdm.set_pssh_b64(self.pssh_b64)
+
                 challenge = cdm.get_license_challenge(session_id, self.pssh.wrm_headers[0])
-                license_res = licence(challenge=challenge)
+
+                try:
+                    license_res = licence(challenge=challenge)
+                except Exception:
+                    if hasattr(cdm, "use_cached_keys_as_fallback"):
+                        if cdm.use_cached_keys_as_fallback(session_id):
+                            keys = self._extract_keys_from_cdm(cdm, session_id)
+                            self.content_keys.update(keys)
+                            continue
+
+                    raise
 
                 if isinstance(license_res, bytes):
                     license_str = license_res.decode(errors="ignore")
@@ -245,7 +290,7 @@ class PlayReady:
                         pass
 
                 cdm.parse_license(session_id, license_str)
-                keys = {key.key_id: key.key.hex() for key in cdm.get_keys(session_id)}
+                keys = self._extract_keys_from_cdm(cdm, session_id)
                 self.content_keys.update(keys)
             finally:
                 cdm.close(session_id)
