@@ -8,10 +8,10 @@ import tempfile
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Optional, Tuple
+from xml.sax.saxutils import escape
 
 import requests
 from requests.adapters import HTTPAdapter, Retry
-from xml.sax.saxutils import escape
 
 from unshackle.core import binaries
 from unshackle.core.config import config
