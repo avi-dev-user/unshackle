@@ -350,13 +350,25 @@ def tag_file(path: Path, title: Title, tmdb_id: Optional[int] | None = None) -> 
                 if simkl_tmdb_id:
                     tmdb_id = simkl_tmdb_id
 
-                show_ids = simkl_data.get("show", {}).get("ids", {})
-                if show_ids.get("imdb"):
-                    standard_tags["IMDB"] = show_ids["imdb"]
-                if show_ids.get("tvdb"):
-                    standard_tags["TVDB"] = str(show_ids["tvdb"])
-                if show_ids.get("tmdbtv"):
-                    standard_tags["TMDB"] = f"tv/{show_ids['tmdbtv']}"
+                # Handle TV show data from Simkl
+                if simkl_data.get("type") == "episode" and "show" in simkl_data:
+                    show_ids = simkl_data.get("show", {}).get("ids", {})
+                    if show_ids.get("imdb"):
+                        standard_tags["IMDB"] = show_ids["imdb"]
+                    if show_ids.get("tvdb"):
+                        standard_tags["TVDB2"] = f"series/{show_ids['tvdb']}"
+                    if show_ids.get("tmdbtv"):
+                        standard_tags["TMDB"] = f"tv/{show_ids['tmdbtv']}"
+                
+                # Handle movie data from Simkl
+                elif simkl_data.get("type") == "movie" and "movie" in simkl_data:
+                    movie_ids = simkl_data.get("movie", {}).get("ids", {})
+                    if movie_ids.get("imdb"):
+                        standard_tags["IMDB"] = movie_ids["imdb"]
+                    if movie_ids.get("tvdb"):
+                        standard_tags["TVDB2"] = f"movies/{movie_ids['tvdb']}"
+                    if movie_ids.get("tmdb"):
+                        standard_tags["TMDB"] = f"movie/{movie_ids['tmdb']}"
 
         # Use TMDB API for additional metadata (either from provided ID or Simkl lookup)
         api_key = _api_key()
@@ -389,7 +401,10 @@ def tag_file(path: Path, title: Title, tmdb_id: Optional[int] | None = None) -> 
             standard_tags["IMDB"] = imdb_id
         tvdb_id = ids.get("tvdb_id")
         if tvdb_id:
-            standard_tags["TVDB"] = str(tvdb_id)
+            if kind == "movie":
+                standard_tags["TVDB2"] = f"movies/{tvdb_id}"
+            else:
+                standard_tags["TVDB2"] = f"series/{tvdb_id}"
 
     merged_tags = {
         **custom_tags,
