@@ -110,6 +110,7 @@ class DecryptLabsRemoteCDM:
         self.device_name = device_name
         self.service_name = service_name or ""
         self.vaults = vaults
+        self.uch = self.host != "https://keyxtractor.decryptlabs.com"
 
         self._device_type_str = device_type
         if device_type:
@@ -308,32 +309,9 @@ class DecryptLabsRemoteCDM:
                 if key and key.count("0") != len(key):
                     return True
 
-        if self.service_name:
-            try:
-                key_ids = []
-                if hasattr(pssh, "key_ids"):
-                    key_ids = [kid.hex for kid in pssh.key_ids]
-                elif hasattr(pssh, "kids"):
-                    key_ids = [kid.hex for kid in pssh.kids]
-
-                if key_ids:
-                    response = self._http_session.post(
-                        f"{self.host}/get-cached-keys",
-                        json={"service": self.service_name, "kid": key_ids},
-                        timeout=30,
-                    )
-
-                if response.status_code == 200:
-                    data = response.json()
-                    return (
-                        data.get("message") == "success"
-                        and "cached_keys" in data
-                        and isinstance(data["cached_keys"], list)
-                        and len(data["cached_keys"]) > 0
-                    )
-
-            except Exception:
-                pass
+        session_keys = session.get("keys", [])
+        if session_keys and len(session_keys) > 0:
+            return True
 
         return False
 
@@ -366,11 +344,7 @@ class DecryptLabsRemoteCDM:
         session["pssh"] = pssh_or_wrm
         init_data = self._get_init_data_from_pssh(pssh_or_wrm)
 
-        if self.has_cached_keys(session_id):
-            self._load_cached_keys(session_id)
-            return b""
-
-        request_data = {"scheme": self.device_name, "init_data": init_data}
+        request_data = {"scheme": self.device_name, "init_data": init_data, "get_cached_keys_if_exists": True}
 
         if self.device_name in ["L1", "L2", "SL2", "SL3"] and self.service_name:
             request_data["service"] = self.service_name
@@ -513,29 +487,6 @@ class DecryptLabsRemoteCDM:
                 key, _ = self.vaults.get_key(kid)
                 if key and key.count("0") != len(key):
                     keys.append({"kid": kid.hex, "key": key, "type": "CONTENT"})
-
-        if not keys and self.service_name:
-            try:
-                key_ids = []
-                if hasattr(pssh, "key_ids"):
-                    key_ids = [kid.hex for kid in pssh.key_ids]
-                elif hasattr(pssh, "kids"):
-                    key_ids = [kid.hex for kid in pssh.kids]
-
-                if key_ids:
-                    response = self._http_session.post(
-                        f"{self.host}/get-cached-keys",
-                        json={"service": self.service_name, "kid": key_ids},
-                        timeout=30,
-                    )
-
-                    if response.status_code == 200:
-                        data = response.json()
-                        if data.get("message") == "success" and "cached_keys" in data:
-                            keys = self._parse_cached_keys(data["cached_keys"])
-
-            except Exception:
-                pass
 
         session["keys"] = keys
 

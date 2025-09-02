@@ -266,30 +266,32 @@ class PlayReady:
                     cdm.set_pssh_b64(self.pssh_b64)
 
                 challenge = cdm.get_license_challenge(session_id, self.pssh.wrm_headers[0])
-
-                try:
-                    license_res = licence(challenge=challenge)
-                except Exception:
-                    if hasattr(cdm, "use_cached_keys_as_fallback"):
-                        if cdm.use_cached_keys_as_fallback(session_id):
-                            keys = self._extract_keys_from_cdm(cdm, session_id)
-                            self.content_keys.update(keys)
-                            continue
-
-                    raise
-
-                if isinstance(license_res, bytes):
-                    license_str = license_res.decode(errors="ignore")
+                if hasattr(cdm, "has_cached_keys") and cdm.has_cached_keys(session_id):
+                    pass
                 else:
-                    license_str = str(license_res)
-
-                if "<License>" not in license_str:
                     try:
-                        license_str = base64.b64decode(license_str + "===").decode()
+                        license_res = licence(challenge=challenge)
                     except Exception:
-                        pass
+                        if hasattr(cdm, "use_cached_keys_as_fallback"):
+                            if cdm.use_cached_keys_as_fallback(session_id):
+                                keys = self._extract_keys_from_cdm(cdm, session_id)
+                                self.content_keys.update(keys)
+                                continue
 
-                cdm.parse_license(session_id, license_str)
+                        raise
+
+                    if isinstance(license_res, bytes):
+                        license_str = license_res.decode(errors="ignore")
+                    else:
+                        license_str = str(license_res)
+
+                    if "<License>" not in license_str:
+                        try:
+                            license_str = base64.b64decode(license_str + "===").decode()
+                        except Exception:
+                            pass
+
+                    cdm.parse_license(session_id, license_str)
                 keys = self._extract_keys_from_cdm(cdm, session_id)
                 self.content_keys.update(keys)
             finally:
