@@ -402,6 +402,10 @@ class DecryptLabsRemoteCDM:
                 error_msg += f" - Details: {data['details']}"
             if "error" in data:
                 error_msg += f" - Error: {data['error']}"
+
+            if "service_certificate is required" in str(data) and not session["service_certificate"]:
+                error_msg += " (No service certificate was provided to the CDM session)"
+
             raise requests.RequestException(f"API error: {error_msg}")
 
         message_type = data.get("message_type")
