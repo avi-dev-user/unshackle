@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.4] - 2025-09-02
+
+### Added
+
+- **Enhanced DecryptLabs CDM Support**: Comprehensive remote CDM functionality
+  - Full support for Widevine, PlayReady, and ChromeCDM through DecryptLabsRemoteCDM
+  - Enhanced session management and caching support for remote WV/PR operations
+  - Support for cached keys and improved license handling
+  - New CDM configurations for Chrome and PlayReady devices with updated User-Agent and service certificate
+- **Advanced Configuration Options**: New device and language preferences
+  - Added configuration options for device certificate status list
+  - Enhanced language preference settings
+
+### Changed
+
+- **DRM Decryption Enhancements**: Streamlined decryption process
+  - Simplified decrypt method by removing unused parameter and streamlined logic
+  - Improved DecryptLabs CDM configurations with better device support
+
+### Fixed
+
+- **Matroska Tag Compliance**: Enhanced media container compatibility  
+  - Fixed Matroska tag compliance with official specification
+- **Application Branding**: Cleaned up version display
+  - Removed old devine version reference from banner to avoid developer confusion
+  - Updated branding while maintaining original GNU license compliance
+- **IP Information Handling**: Improved geolocation services
+  - Enhanced get_ip_info functionality with better failover handling
+  - Added support for 429 error handling and multiple API provider fallback
+  - Implemented cached IP info retrieval with fallback tester to avoid rate limiting
+- **Dependencies**: Streamlined package requirements
+  - Removed unnecessary data extra requirement from langcodes
+
+### Removed
+
+- Deprecated version references in application banner for clarity
+
 ## [1.4.3] - 2025-08-20
 
 ### Added
