@@ -185,6 +185,9 @@ class Widevine:
                 if cert and hasattr(cdm, "set_service_certificate"):
                     cdm.set_service_certificate(session_id, cert)
 
+                if hasattr(cdm, "set_required_kids"):
+                    cdm.set_required_kids(self.kids)
+
                 challenge = cdm.get_license_challenge(session_id, self.pssh)
 
                 if hasattr(cdm, "has_cached_keys") and cdm.has_cached_keys(session_id):
@@ -217,6 +220,9 @@ class Widevine:
                 cert = certificate(challenge=cdm.service_certificate_challenge)
                 if cert and hasattr(cdm, "set_service_certificate"):
                     cdm.set_service_certificate(session_id, cert)
+
+                if hasattr(cdm, "set_required_kids"):
+                    cdm.set_required_kids(self.kids)
 
                 challenge = cdm.get_license_challenge(session_id, self.pssh)
 

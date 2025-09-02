@@ -256,30 +256,19 @@ class PlayReady:
         return keys
 
     def get_content_keys(self, cdm: PlayReadyCdm, certificate: Callable, licence: Callable) -> None:
-        for kid in self.kids:
-            if kid in self.content_keys:
-                continue
+        session_id = cdm.open()
+        try:
+            if hasattr(cdm, "set_pssh_b64") and self.pssh_b64:
+                cdm.set_pssh_b64(self.pssh_b64)
 
-            session_id = cdm.open()
-            try:
-                if hasattr(cdm, "set_pssh_b64") and self.pssh_b64:
-                    cdm.set_pssh_b64(self.pssh_b64)
+            if hasattr(cdm, "set_required_kids"):
+                cdm.set_required_kids(self.kids)
 
-                challenge = cdm.get_license_challenge(session_id, self.pssh.wrm_headers[0])
-                if hasattr(cdm, "has_cached_keys") and cdm.has_cached_keys(session_id):
-                    pass
-                else:
-                    try:
-                        license_res = licence(challenge=challenge)
-                    except Exception:
-                        if hasattr(cdm, "use_cached_keys_as_fallback"):
-                            if cdm.use_cached_keys_as_fallback(session_id):
-                                keys = self._extract_keys_from_cdm(cdm, session_id)
-                                self.content_keys.update(keys)
-                                continue
+            challenge = cdm.get_license_challenge(session_id, self.pssh.wrm_headers[0])
 
-                        raise
-
+            if challenge:
+                try:
+                    license_res = licence(challenge=challenge)
                     if isinstance(license_res, bytes):
                         license_str = license_res.decode(errors="ignore")
                     else:
@@ -292,10 +281,13 @@ class PlayReady:
                             pass
 
                     cdm.parse_license(session_id, license_str)
-                keys = self._extract_keys_from_cdm(cdm, session_id)
-                self.content_keys.update(keys)
-            finally:
-                cdm.close(session_id)
+                except Exception:
+                    raise
+
+            keys = self._extract_keys_from_cdm(cdm, session_id)
+            self.content_keys.update(keys)
+        finally:
+            cdm.close(session_id)
 
         if not self.content_keys:
             raise PlayReady.Exceptions.EmptyLicense("No Content Keys were within the License")
