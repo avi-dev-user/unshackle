@@ -345,7 +345,10 @@ class dl:
                 sys.exit(1)
 
             if self.cdm:
-                if hasattr(self.cdm, "device_type") and self.cdm.device_type.name in ["ANDROID", "CHROME"]:
+                if isinstance(self.cdm, DecryptLabsRemoteCDM):
+                    drm_type = "PlayReady" if self.cdm.is_playready else "Widevine"
+                    self.log.info(f"Loaded {drm_type} Remote CDM: DecryptLabs (L{self.cdm.security_level})")
+                elif hasattr(self.cdm, "device_type") and self.cdm.device_type.name in ["ANDROID", "CHROME"]:
                     self.log.info(f"Loaded Widevine CDM: {self.cdm.system_id} (L{self.cdm.security_level})")
                 else:
                     self.log.info(
@@ -874,7 +877,12 @@ class dl:
                                         ),
                                         licence=partial(
                                             service.get_playready_license
-                                            if isinstance(self.cdm, PlayReadyCdm)
+                                            if (
+                                                isinstance(self.cdm, PlayReadyCdm)
+                                                or (
+                                                    isinstance(self.cdm, DecryptLabsRemoteCDM) and self.cdm.is_playready
+                                                )
+                                            )
                                             and hasattr(service, "get_playready_license")
                                             else service.get_widevine_license,
                                             title=title,
@@ -1201,10 +1209,22 @@ class dl:
         if not drm:
             return
 
-        if isinstance(drm, Widevine) and not isinstance(self.cdm, WidevineCdm):
-            self.cdm = self.get_cdm(self.service, self.profile, drm="widevine")
-        elif isinstance(drm, PlayReady) and not isinstance(self.cdm, PlayReadyCdm):
-            self.cdm = self.get_cdm(self.service, self.profile, drm="playready")
+        if isinstance(drm, Widevine):
+            if not isinstance(self.cdm, (WidevineCdm, DecryptLabsRemoteCDM)) or (
+                isinstance(self.cdm, DecryptLabsRemoteCDM) and self.cdm.is_playready
+            ):
+                widevine_cdm = self.get_cdm(self.service, self.profile, drm="widevine")
+                if widevine_cdm:
+                    self.log.info("Switching to Widevine CDM for Widevine content")
+                    self.cdm = widevine_cdm
+        elif isinstance(drm, PlayReady):
+            if not isinstance(self.cdm, (PlayReadyCdm, DecryptLabsRemoteCDM)) or (
+                isinstance(self.cdm, DecryptLabsRemoteCDM) and not self.cdm.is_playready
+            ):
+                playready_cdm = self.get_cdm(self.service, self.profile, drm="playready")
+                if playready_cdm:
+                    self.log.info("Switching to PlayReady CDM for PlayReady content")
+                    self.cdm = playready_cdm
 
         if isinstance(drm, Widevine):
             with self.DRM_TABLE_LOCK:
@@ -1477,26 +1497,17 @@ class dl:
 
         cdm_api = next(iter(x for x in config.remote_cdm if x["name"] == cdm_name), None)
         if cdm_api:
-            is_decrypt_lab = True if cdm_api["type"] == "decrypt_labs" else False
+            is_decrypt_lab = True if cdm_api.get("type") == "decrypt_labs" else False
             if is_decrypt_lab:
-                device_type = cdm_api.get("device_type")
                 del cdm_api["name"]
                 del cdm_api["type"]
 
-                # Use the appropriate DecryptLabs CDM class based on device type
-                if device_type == "PLAYREADY" or cdm_api.get("device_name") in ["SL2", "SL3"]:
-                    from unshackle.core.cdm.decrypt_labs_remote_cdm import DecryptLabsRemotePlayReadyCDM
-
-                    # Remove unused parameters for PlayReady CDM
-                    cdm_params = cdm_api.copy()
-                    cdm_params.pop("device_type", None)
-                    cdm_params.pop("system_id", None)
-                    return DecryptLabsRemotePlayReadyCDM(service_name=service, vaults=self.vaults, **cdm_params)
-                else:
-                    return DecryptLabsRemoteCDM(service_name=service, vaults=self.vaults, **cdm_api)
+                # All DecryptLabs CDMs use DecryptLabsRemoteCDM
+                return DecryptLabsRemoteCDM(service_name=service, vaults=self.vaults, **cdm_api)
             else:
                 del cdm_api["name"]
-                del cdm_api["type"]
+                if "type" in cdm_api:
+                    del cdm_api["type"]
                 return RemoteCdm(**cdm_api)
 
         prd_path = config.directories.prds / f"{cdm_name}.prd"
