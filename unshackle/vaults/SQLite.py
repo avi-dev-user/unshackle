@@ -102,16 +102,27 @@ class SQLite(Vault):
         if any(isinstance(kid, UUID) for kid, key_ in kid_keys.items()):
             kid_keys = {kid.hex if isinstance(kid, UUID) else kid: key_ for kid, key_ in kid_keys.items()}
 
+        if not kid_keys:
+            return 0
+
         conn = self.conn_factory.get()
         cursor = conn.cursor()
 
         try:
+            placeholders = ",".join(["?"] * len(kid_keys))
+            cursor.execute(f"SELECT kid FROM `{service}` WHERE kid IN ({placeholders})", list(kid_keys.keys()))
+            existing_kids = {row[0] for row in cursor.fetchall()}
+
+            new_keys = {kid: key for kid, key in kid_keys.items() if kid not in existing_kids}
+
+            if not new_keys:
+                return 0
+
             cursor.executemany(
-                # TODO: SQL injection risk
-                f"INSERT OR IGNORE INTO `{service}` (kid, key_) VALUES (?, ?)",
-                kid_keys.items(),
+                f"INSERT INTO `{service}` (kid, key_) VALUES (?, ?)",
+                new_keys.items(),
             )
-            return cursor.rowcount
+            return len(new_keys)
         finally:
             conn.commit()
             cursor.close()
