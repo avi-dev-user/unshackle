@@ -117,7 +117,7 @@ remote_cdm:
     type: "decrypt_labs"
     device_name: "L1"  # Scheme identifier - must match exactly
     device_type: ANDROID
-    system_id: 4464 
+    system_id: 4464
     security_level: 1
     host: "https://keyxtractor.decryptlabs.com"
     secret: "your_decrypt_labs_api_key_here"
