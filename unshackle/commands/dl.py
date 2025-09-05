@@ -66,6 +66,18 @@ from unshackle.core.vaults import Vaults
 
 
 class dl:
+    @staticmethod
+    def _truncate_pssh_for_display(pssh_string: str, drm_type: str) -> str:
+        """Truncate PSSH string for display when not in debug mode."""
+        if logging.root.level == logging.DEBUG or not pssh_string:
+            return pssh_string
+
+        max_width = console.width - len(drm_type) - 12
+        if len(pssh_string) <= max_width:
+            return pssh_string
+
+        return pssh_string[: max_width - 3] + "..."
+
     @click.command(
         short_help="Download, Decrypt, and Mux tracks for titles from a Service.",
         cls=Services,
@@ -1228,7 +1240,8 @@ class dl:
 
         if isinstance(drm, Widevine):
             with self.DRM_TABLE_LOCK:
-                cek_tree = Tree(Text.assemble(("Widevine", "cyan"), (f"({drm.pssh.dumps()})", "text"), overflow="fold"))
+                pssh_display = self._truncate_pssh_for_display(drm.pssh.dumps(), "Widevine")
+                cek_tree = Tree(Text.assemble(("Widevine", "cyan"), (f"({pssh_display})", "text"), overflow="fold"))
                 pre_existing_tree = next(
                     (x for x in table.columns[0].cells if isinstance(x, Tree) and x.label == cek_tree.label), None
                 )
@@ -1320,10 +1333,11 @@ class dl:
 
         elif isinstance(drm, PlayReady):
             with self.DRM_TABLE_LOCK:
+                pssh_display = self._truncate_pssh_for_display(drm.pssh_b64 or "", "PlayReady")
                 cek_tree = Tree(
                     Text.assemble(
                         ("PlayReady", "cyan"),
-                        (f"({drm.pssh_b64 or ''})", "text"),
+                        (f"({pssh_display})", "text"),
                         overflow="fold",
                     )
                 )
