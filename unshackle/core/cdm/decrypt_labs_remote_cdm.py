@@ -435,6 +435,12 @@ class DecryptLabsRemoteCDM:
                 if missing_kids:
                     session["cached_keys"] = parsed_keys
                     request_data["get_cached_keys_if_exists"] = False
+
+                    if "decrypt_labs_session_id" in session:
+                        del session["decrypt_labs_session_id"]
+                    if "challenge" in session:
+                        del session["challenge"]
+
                     response = self._http_session.post(f"{self.host}/get-request", json=request_data, timeout=30)
                     if response.status_code == 200:
                         data = response.json()
