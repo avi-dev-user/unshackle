@@ -250,12 +250,14 @@ class DecryptLabsRemoteCDM:
             "pssh": None,
             "challenge": None,
             "decrypt_labs_session_id": None,
+            "tried_cache": False,
+            "cached_keys": None,
         }
         return session_id
 
     def close(self, session_id: bytes) -> None:
         """
-        Close a CDM session.
+        Close a CDM session and perform comprehensive cleanup.
 
         Args:
             session_id: Session identifier
@@ -266,6 +268,8 @@ class DecryptLabsRemoteCDM:
         if session_id not in self._sessions:
             raise DecryptLabsRemoteCDMExceptions.InvalidSession(f"Invalid session ID: {session_id.hex()}")
 
+        session = self._sessions[session_id]
+        session.clear()
         del self._sessions[session_id]
 
     def get_service_certificate(self, session_id: bytes) -> Optional[bytes]:
@@ -435,6 +439,10 @@ class DecryptLabsRemoteCDM:
                 if missing_kids:
                     session["cached_keys"] = parsed_keys
                     request_data["get_cached_keys_if_exists"] = False
+                    session["decrypt_labs_session_id"] = None
+                    session["challenge"] = None
+                    session["tried_cache"] = False
+
                     response = self._http_session.post(f"{self.host}/get-request", json=request_data, timeout=30)
                     if response.status_code == 200:
                         data = response.json()
@@ -580,6 +588,7 @@ class DecryptLabsRemoteCDM:
                     all_keys.append(license_key)
 
             session["keys"] = all_keys
+            session["cached_keys"] = None
         else:
             session["keys"] = license_keys
 
