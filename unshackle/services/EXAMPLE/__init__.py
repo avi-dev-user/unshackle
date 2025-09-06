@@ -282,6 +282,10 @@ class EXAMPLE(Service):
 
         return chapters
 
+    def get_widevine_service_certificate(self, **_: any) -> str:
+        """Return the Widevine service certificate from config, if available."""
+        return self.config.get("certificate")
+
     def get_playready_license(self, *, challenge: bytes, title: Title_T, track: AnyTrack) -> Optional[bytes]:
         """Retrieve a PlayReady license for a given track."""
 

@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
 
 import requests
+from pywidevine.cdm import Cdm as WidevineCdm
 from pywidevine.device import DeviceTypes
 from requests import Session
 
@@ -308,8 +309,13 @@ class DecryptLabsRemoteCDM:
             raise DecryptLabsRemoteCDMExceptions.InvalidSession(f"Invalid session ID: {session_id.hex()}")
 
         if certificate is None:
-            self._sessions[session_id]["service_certificate"] = None
-            return "Removed"
+            if not self._is_playready and self.device_name == "L1":
+                certificate = WidevineCdm.common_privacy_cert
+                self._sessions[session_id]["service_certificate"] = base64.b64decode(certificate)
+                return "Using default Widevine common privacy certificate for L1"
+            else:
+                self._sessions[session_id]["service_certificate"] = None
+                return "No certificate set (not required for this device type)"
 
         if isinstance(certificate, str):
             certificate = base64.b64decode(certificate)
