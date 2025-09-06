@@ -80,15 +80,17 @@ class DecryptLabsRemoteCDM:
     Key Features:
     - Compatible with both Widevine and PlayReady DRM schemes
     - Intelligent caching that compares required vs. available keys
+    - Optimized caching for L1/L2 devices (leverages API auto-optimization)
     - Automatic key combination for mixed cache/license scenarios
     - Seamless fallback to license requests when keys are missing
 
     Intelligent Caching System:
     1. DRM classes (PlayReady/Widevine) provide required KIDs via set_required_kids()
     2. get_license_challenge() first checks for cached keys
-    3. If cached keys satisfy requirements, returns empty challenge (no license needed)
-    4. If keys are missing, makes targeted license request for remaining keys
-    5. parse_license() combines cached and license keys intelligently
+    3. For L1/L2 devices, always attempts cached keys first (API optimized)
+    4. If cached keys satisfy requirements, returns empty challenge (no license needed)
+    5. If keys are missing, makes targeted license request for remaining keys
+    6. parse_license() combines cached and license keys intelligently
     """
 
     service_certificate_challenge = b"\x08\x04"
@@ -356,6 +358,8 @@ class DecryptLabsRemoteCDM:
         4. Returns empty challenge if all required keys are cached
 
         The intelligent caching works as follows:
+        - For L1/L2 devices: Always prioritizes cached keys (API automatically optimizes)
+        - For other devices: Uses cache retry logic based on session state
         - With required KIDs set: Only requests license for missing keys
         - Without required KIDs: Returns any available cached keys
         - For PlayReady: Combines cached keys with license keys seamlessly
@@ -375,6 +379,7 @@ class DecryptLabsRemoteCDM:
 
         Note:
             Call set_required_kids() before this method for optimal caching behavior.
+            L1/L2 devices automatically use cached keys when available per API design.
         """
         _ = license_type, privacy_mode
 
@@ -387,10 +392,15 @@ class DecryptLabsRemoteCDM:
         init_data = self._get_init_data_from_pssh(pssh_or_wrm)
         already_tried_cache = session.get("tried_cache", False)
 
+        if self.device_name in ["L1", "L2"]:
+            get_cached_keys = True
+        else:
+            get_cached_keys = not already_tried_cache
+
         request_data = {
             "scheme": self.device_name,
             "init_data": init_data,
-            "get_cached_keys_if_exists": not already_tried_cache,
+            "get_cached_keys_if_exists": get_cached_keys,
         }
 
         if self.device_name in ["L1", "L2", "SL2", "SL3"] and self.service_name:
@@ -444,12 +454,30 @@ class DecryptLabsRemoteCDM:
 
                 if missing_kids:
                     session["cached_keys"] = parsed_keys
-                    request_data["get_cached_keys_if_exists"] = False
+
+                    if self.device_name in ["L1", "L2"]:
+                        license_request_data = {
+                            "scheme": self.device_name,
+                            "init_data": init_data,
+                            "get_cached_keys_if_exists": False,
+                        }
+                        if self.service_name:
+                            license_request_data["service"] = self.service_name
+                        if session["service_certificate"]:
+                            license_request_data["service_certificate"] = base64.b64encode(
+                                session["service_certificate"]
+                            ).decode("utf-8")
+                    else:
+                        license_request_data = request_data.copy()
+                        license_request_data["get_cached_keys_if_exists"] = False
+
                     session["decrypt_labs_session_id"] = None
                     session["challenge"] = None
                     session["tried_cache"] = False
 
-                    response = self._http_session.post(f"{self.host}/get-request", json=request_data, timeout=30)
+                    response = self._http_session.post(
+                        f"{self.host}/get-request", json=license_request_data, timeout=30
+                    )
                     if response.status_code == 200:
                         data = response.json()
                         if data.get("message") == "success" and "challenge" in data:
