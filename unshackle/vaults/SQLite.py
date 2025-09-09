@@ -19,22 +19,30 @@ class SQLite(Vault):
         self.conn_factory = ConnectionFactory(self.path)
 
     def get_key(self, kid: Union[UUID, str], service: str) -> Optional[str]:
-        if not self.has_table(service):
-            # no table, no key, simple
-            return None
-
         if isinstance(kid, UUID):
             kid = kid.hex
 
         conn = self.conn_factory.get()
         cursor = conn.cursor()
 
+        # Try both the original service name and lowercase version to handle case sensitivity issues
+        service_variants = [service]
+        if service != service.lower():
+            service_variants.append(service.lower())
+        if service != service.upper():
+            service_variants.append(service.upper())
+
         try:
-            cursor.execute(f"SELECT `id`, `key_` FROM `{service}` WHERE `kid`=? AND `key_`!=?", (kid, "0" * 32))
-            cek = cursor.fetchone()
-            if not cek:
-                return None
-            return cek[1]
+            for service_name in service_variants:
+                if not self.has_table(service_name):
+                    continue
+                    
+                cursor.execute(f"SELECT `id`, `key_` FROM `{service_name}` WHERE `kid`=? AND `key_`!=?", (kid, "0" * 32))
+                cek = cursor.fetchone()
+                if cek:
+                    return cek[1]
+            
+            return None
         finally:
             cursor.close()
 

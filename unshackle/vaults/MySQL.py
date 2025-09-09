@@ -28,26 +28,33 @@ class MySQL(Vault):
             raise PermissionError(f"MySQL vault {self.slug} has no SELECT permission.")
 
     def get_key(self, kid: Union[UUID, str], service: str) -> Optional[str]:
-        if not self.has_table(service):
-            # no table, no key, simple
-            return None
-
         if isinstance(kid, UUID):
             kid = kid.hex
+
+        service_variants = [service]
+        if service != service.lower():
+            service_variants.append(service.lower())
+        if service != service.upper():
+            service_variants.append(service.upper())
 
         conn = self.conn_factory.get()
         cursor = conn.cursor()
 
         try:
-            cursor.execute(
-                # TODO: SQL injection risk
-                f"SELECT `id`, `key_` FROM `{service}` WHERE `kid`=%s AND `key_`!=%s",
-                (kid, "0" * 32),
-            )
-            cek = cursor.fetchone()
-            if not cek:
-                return None
-            return cek["key_"]
+            for service_name in service_variants:
+                if not self.has_table(service_name):
+                    continue
+
+                cursor.execute(
+                    # TODO: SQL injection risk
+                    f"SELECT `id`, `key_` FROM `{service_name}` WHERE `kid`=%s AND `key_`!=%s",
+                    (kid, "0" * 32),
+                )
+                cek = cursor.fetchone()
+                if cek:
+                    return cek["key_"]
+
+            return None
         finally:
             cursor.close()
 

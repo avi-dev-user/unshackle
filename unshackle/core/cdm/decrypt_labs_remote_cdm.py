@@ -353,17 +353,19 @@ class DecryptLabsRemoteCDM:
         Generate a license challenge using Decrypt Labs API with intelligent caching.
 
         This method implements smart caching logic that:
-        1. First attempts to retrieve cached keys from the API
-        2. If required KIDs are set, compares cached keys against requirements
-        3. Only makes a license request if keys are missing
-        4. Returns empty challenge if all required keys are cached
+        1. First checks local vaults for required keys
+        2. Attempts to retrieve cached keys from the API
+        3. If required KIDs are set, compares available keys (vault + cached) against requirements
+        4. Only makes a license request if keys are missing
+        5. Returns empty challenge if all required keys are available
 
         The intelligent caching works as follows:
+        - Local vaults: Always checked first if available
         - For L1/L2 devices: Always prioritizes cached keys (API automatically optimizes)
         - For other devices: Uses cache retry logic based on session state
         - With required KIDs set: Only requests license for missing keys
         - Without required KIDs: Returns any available cached keys
-        - For PlayReady: Combines cached keys with license keys seamlessly
+        - For PlayReady: Combines vault, cached, and license keys seamlessly
 
         Args:
             session_id: Session identifier
@@ -372,7 +374,7 @@ class DecryptLabsRemoteCDM:
             privacy_mode: Whether to use privacy mode - for compatibility only
 
         Returns:
-            License challenge as bytes, or empty bytes if cached keys satisfy requirements
+            License challenge as bytes, or empty bytes if available keys satisfy requirements
 
         Raises:
             InvalidSession: If session ID is invalid
@@ -381,6 +383,7 @@ class DecryptLabsRemoteCDM:
         Note:
             Call set_required_kids() before this method for optimal caching behavior.
             L1/L2 devices automatically use cached keys when available per API design.
+            Local vault keys are always checked first when vaults are available.
         """
         _ = license_type, privacy_mode
 
@@ -393,6 +396,31 @@ class DecryptLabsRemoteCDM:
         init_data = self._get_init_data_from_pssh(pssh_or_wrm)
         already_tried_cache = session.get("tried_cache", False)
 
+        if self.vaults and self._required_kids:
+            vault_keys = []
+            for kid_str in self._required_kids:
+                try:
+                    clean_kid = kid_str.replace("-", "")
+                    if len(clean_kid) == 32:
+                        kid_uuid = UUID(hex=clean_kid)
+                    else:
+                        kid_uuid = UUID(hex=clean_kid.ljust(32, "0"))
+                    key, _ = self.vaults.get_key(kid_uuid)
+                    if key and key.count("0") != len(key):
+                        vault_keys.append({"kid": kid_str, "key": key, "type": "CONTENT"})
+                except (ValueError, TypeError):
+                    continue
+
+            if vault_keys:
+                vault_kids = set(k["kid"] for k in vault_keys)
+                required_kids = set(self._required_kids)
+
+                if required_kids.issubset(vault_kids):
+                    session["keys"] = vault_keys
+                    return b""
+                else:
+                    session["vault_keys"] = vault_keys
+
         if self.device_name in ["L1", "L2"]:
             get_cached_keys = True
         else:
@@ -404,7 +432,7 @@ class DecryptLabsRemoteCDM:
             "get_cached_keys_if_exists": get_cached_keys,
         }
 
-        if self.device_name in ["L1", "L2", "SL2", "SL3"] and self.service_name:
+        if self.service_name:
             request_data["service"] = self.service_name
 
         if session["service_certificate"]:
@@ -441,17 +469,22 @@ class DecryptLabsRemoteCDM:
             """
             cached_keys = data.get("cached_keys", [])
             parsed_keys = self._parse_cached_keys(cached_keys)
-            session["keys"] = parsed_keys
+
+            all_available_keys = list(parsed_keys)
+            if "vault_keys" in session:
+                all_available_keys.extend(session["vault_keys"])
+
+            session["keys"] = all_available_keys
             session["tried_cache"] = True
 
             if self._required_kids:
-                cached_kids = set()
-                for key in parsed_keys:
+                available_kids = set()
+                for key in all_available_keys:
                     if isinstance(key, dict) and "kid" in key:
-                        cached_kids.add(key["kid"].replace("-", "").lower())
+                        available_kids.add(key["kid"].replace("-", "").lower())
 
                 required_kids = set(self._required_kids)
-                missing_kids = required_kids - cached_kids
+                missing_kids = required_kids - available_kids
 
                 if missing_kids:
                     session["cached_keys"] = parsed_keys
@@ -585,51 +618,62 @@ class DecryptLabsRemoteCDM:
 
         license_keys = self._parse_keys_response(data)
 
-        if self.is_playready and "cached_keys" in session:
-            """
-            Combine cached keys with license keys for PlayReady content.
+        all_keys = []
 
-            This ensures we have both the cached keys (obtained earlier) and
-            any additional keys from the license response, without duplicates.
-            """
+        if "vault_keys" in session:
+            all_keys.extend(session["vault_keys"])
+
+        if "cached_keys" in session:
             cached_keys = session.get("cached_keys", [])
-            all_keys = list(cached_keys)
+            for cached_key in cached_keys:
+                all_keys.append(cached_key)
 
-            for license_key in license_keys:
-                already_exists = False
-                license_kid = None
-                if isinstance(license_key, dict) and "kid" in license_key:
-                    license_kid = license_key["kid"].replace("-", "").lower()
-                elif hasattr(license_key, "kid"):
-                    license_kid = str(license_key.kid).replace("-", "").lower()
-                elif hasattr(license_key, "key_id"):
-                    license_kid = str(license_key.key_id).replace("-", "").lower()
+        for license_key in license_keys:
+            already_exists = False
+            license_kid = None
+            if isinstance(license_key, dict) and "kid" in license_key:
+                license_kid = license_key["kid"].replace("-", "").lower()
+            elif hasattr(license_key, "kid"):
+                license_kid = str(license_key.kid).replace("-", "").lower()
+            elif hasattr(license_key, "key_id"):
+                license_kid = str(license_key.key_id).replace("-", "").lower()
 
-                if license_kid:
-                    for cached_key in cached_keys:
-                        cached_kid = None
-                        if isinstance(cached_key, dict) and "kid" in cached_key:
-                            cached_kid = cached_key["kid"].replace("-", "").lower()
-                        elif hasattr(cached_key, "kid"):
-                            cached_kid = str(cached_key.kid).replace("-", "").lower()
-                        elif hasattr(cached_key, "key_id"):
-                            cached_kid = str(cached_key.key_id).replace("-", "").lower()
+            if license_kid:
+                for existing_key in all_keys:
+                    existing_kid = None
+                    if isinstance(existing_key, dict) and "kid" in existing_key:
+                        existing_kid = existing_key["kid"].replace("-", "").lower()
+                    elif hasattr(existing_key, "kid"):
+                        existing_kid = str(existing_key.kid).replace("-", "").lower()
+                    elif hasattr(existing_key, "key_id"):
+                        existing_kid = str(existing_key.key_id).replace("-", "").lower()
 
-                        if cached_kid == license_kid:
-                            already_exists = True
-                            break
+                    if existing_kid == license_kid:
+                        already_exists = True
+                        break
 
-                if not already_exists:
-                    all_keys.append(license_key)
+            if not already_exists:
+                all_keys.append(license_key)
 
-            session["keys"] = all_keys
-            session["cached_keys"] = None
-        else:
-            session["keys"] = license_keys
+        session["keys"] = all_keys
+        session.pop("cached_keys", None)
+        session.pop("vault_keys", None)
 
         if self.vaults and session["keys"]:
-            key_dict = {UUID(hex=key["kid"]): key["key"] for key in session["keys"] if key["type"] == "CONTENT"}
-            self.vaults.add_keys(key_dict)
+            key_dict = {}
+            for key in session["keys"]:
+                if key["type"] == "CONTENT":
+                    try:
+                        clean_kid = key["kid"].replace("-", "")
+                        if len(clean_kid) == 32:
+                            kid_uuid = UUID(hex=clean_kid)
+                        else:
+                            kid_uuid = UUID(hex=clean_kid.ljust(32, "0"))
+                        key_dict[kid_uuid] = key["key"]
+                    except (ValueError, TypeError):
+                        continue
+            if key_dict:
+                self.vaults.add_keys(key_dict)
 
     def get_keys(self, session_id: bytes, type_: Optional[str] = None) -> List[Key]:
         """
