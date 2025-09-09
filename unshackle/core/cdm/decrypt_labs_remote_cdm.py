@@ -11,6 +11,7 @@ from pywidevine.device import DeviceTypes
 from requests import Session
 
 from unshackle.core.vaults import Vaults
+from unshackle.core import __version__
 
 
 class MockCertificateChain:
@@ -150,7 +151,7 @@ class DecryptLabsRemoteCDM:
             {
                 "decrypt-labs-api-key": self.secret,
                 "Content-Type": "application/json",
-                "User-Agent": "unshackle-decrypt-labs-cdm/1.0",
+                "User-Agent": f"unshackle-decrypt-labs-cdm/{__version__}",
             }
         )
 
