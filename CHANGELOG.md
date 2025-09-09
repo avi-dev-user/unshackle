@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.5] - 2025-09-09
+
+### Added
+
+- **Enhanced CDM Key Caching**: Improved key caching and session management for L1/L2 devices
+  - Optimized `get_cached_keys_if_exists` functionality for better performance with L1/L2 devices
+  - Enhanced cached key retrieval logic with improved session handling
+- **Widevine Common Certificate Fallback**: Added fallback to Widevine common certificate for L1 devices
+  - Improved compatibility for L1 devices when service certificates are unavailable
+- **Enhanced Vault Loading**: Improved vault loading and key copying logic
+  - Better error handling and key management in vault operations
+- **PSSH Display Optimization**: Truncated PSSH string display in non-debug mode for cleaner output
+- **CDM Error Messaging**: Added error messages for missing service certificates in CDM sessions
+
+### Changed
+
+- **Dynamic Version Headers**: Updated User-Agent headers to use dynamic version strings
+  - DecryptLabsRemoteCDM now uses dynamic version import instead of hardcoded version
+- **Intelligent CDM Caching**: Implemented intelligent caching system for CDM license requests
+  - Enhanced caching logic reduces redundant license requests and improves performance
+- **Enhanced Tag Handling**: Improved tag handling for TV shows and movies from Simkl data
+  - Better metadata processing and formatting for improved media tagging
+
+### Fixed
+
+- **CDM Session Management**: Clean up session data when retrieving cached keys
+  - Remove decrypt_labs_session_id and challenge from session when cached keys exist but there are missing kids
+  - Ensures clean state for subsequent requests and prevents session conflicts
+- **Tag Formatting**: Fixed formatting issues in tag processing
+- **Import Order**: Fixed import order issues in tags module
+
 ## [1.4.4] - 2025-09-02
 
 ### Added
