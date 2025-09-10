@@ -10,8 +10,8 @@ from pywidevine.cdm import Cdm as WidevineCdm
 from pywidevine.device import DeviceTypes
 from requests import Session
 
-from unshackle.core.vaults import Vaults
 from unshackle.core import __version__
+from unshackle.core.vaults import Vaults
 
 
 class MockCertificateChain:

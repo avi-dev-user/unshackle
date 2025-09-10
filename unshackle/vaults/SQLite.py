@@ -36,12 +36,12 @@ class SQLite(Vault):
             for service_name in service_variants:
                 if not self.has_table(service_name):
                     continue
-                    
+
                 cursor.execute(f"SELECT `id`, `key_` FROM `{service_name}` WHERE `kid`=? AND `key_`!=?", (kid, "0" * 32))
                 cek = cursor.fetchone()
                 if cek:
                     return cek[1]
-            
+
             return None
         finally:
             cursor.close()
