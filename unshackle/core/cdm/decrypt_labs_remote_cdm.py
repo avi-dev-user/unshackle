@@ -625,8 +625,9 @@ class DecryptLabsRemoteCDM:
 
         if "cached_keys" in session:
             cached_keys = session.get("cached_keys", [])
-            for cached_key in cached_keys:
-                all_keys.append(cached_key)
+            if cached_keys:
+                for cached_key in cached_keys:
+                    all_keys.append(cached_key)
 
         for license_key in license_keys:
             already_exists = False
