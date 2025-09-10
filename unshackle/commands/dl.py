@@ -1147,8 +1147,9 @@ class dl:
                     with Live(Padding(progress, (0, 5, 1, 5)), console=console):
                         for task_id, task_tracks in multiplex_tasks:
                             progress.start_task(task_id)  # TODO: Needed?
+                            audio_expected = not video_only and not no_audio
                             muxed_path, return_code, errors = task_tracks.mux(
-                                str(title), progress=partial(progress.update, task_id=task_id), delete=False
+                                str(title), progress=partial(progress.update, task_id=task_id), delete=False, audio_expected=audio_expected, title_language=title.language
                             )
                             muxed_paths.append(muxed_path)
                             if return_code >= 2:

@@ -420,7 +420,7 @@ class Track:
             for drm in self.drm:
                 if isinstance(drm, PlayReady):
                     return drm
-        elif hasattr(cdm, 'is_playready'):
+        elif hasattr(cdm, "is_playready"):
             if cdm.is_playready:
                 for drm in self.drm:
                     if isinstance(drm, PlayReady):
@@ -567,15 +567,32 @@ class Track:
         output_path = original_path.with_stem(f"{original_path.stem}_repack")
 
         def _ffmpeg(extra_args: list[str] = None):
-            subprocess.run(
+            args = [
+                binaries.FFMPEG,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                original_path,
+                *(extra_args or []),
+            ]
+
+            if hasattr(self, "data") and self.data.get("audio_language"):
+                audio_lang = self.data["audio_language"]
+                audio_name = self.data.get("audio_language_name", audio_lang)
+                args.extend(
+                    [
+                        "-metadata:s:a:0",
+                        f"language={audio_lang}",
+                        "-metadata:s:a:0",
+                        f"title={audio_name}",
+                        "-metadata:s:a:0",
+                        f"handler_name={audio_name}",
+                    ]
+                )
+
+            args.extend(
                 [
-                    binaries.FFMPEG,
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-i",
-                    original_path,
-                    *(extra_args or []),
                     # Following are very important!
                     "-map_metadata",
                     "-1",  # don't transfer metadata to output file
@@ -584,7 +601,11 @@ class Track:
                     "-codec",
                     "copy",
                     str(output_path),
-                ],
+                ]
+            )
+
+            subprocess.run(
+                args,
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
