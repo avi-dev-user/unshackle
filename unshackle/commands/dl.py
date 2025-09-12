@@ -58,8 +58,15 @@ from unshackle.core.tracks.attachment import Attachment
 from unshackle.core.tracks.hybrid import Hybrid
 from unshackle.core.utilities import get_system_fonts, is_close_match, time_elapsed_since
 from unshackle.core.utils import tags
-from unshackle.core.utils.click_types import (LANGUAGE_RANGE, QUALITY_LIST, SEASON_RANGE, ContextData, MultipleChoice,
-                                              SubtitleCodecChoice, VideoCodecChoice)
+from unshackle.core.utils.click_types import (
+    LANGUAGE_RANGE,
+    QUALITY_LIST,
+    SEASON_RANGE,
+    ContextData,
+    MultipleChoice,
+    SubtitleCodecChoice,
+    VideoCodecChoice,
+)
 from unshackle.core.utils.collections import merge_dict
 from unshackle.core.utils.subprocess import ffprobe
 from unshackle.core.vaults import Vaults
@@ -862,6 +869,10 @@ class dl:
 
             selected_tracks, tracks_progress_callables = title.tracks.tree(add_progress=True)
 
+            for track in title.tracks:
+                if hasattr(track, "needs_drm_loading") and track.needs_drm_loading:
+                    track.load_drm_if_needed(service)
+
             download_table = Table.grid()
             download_table.add_row(selected_tracks)
 
@@ -1149,7 +1160,11 @@ class dl:
                             progress.start_task(task_id)  # TODO: Needed?
                             audio_expected = not video_only and not no_audio
                             muxed_path, return_code, errors = task_tracks.mux(
-                                str(title), progress=partial(progress.update, task_id=task_id), delete=False, audio_expected=audio_expected, title_language=title.language
+                                str(title),
+                                progress=partial(progress.update, task_id=task_id),
+                                delete=False,
+                                audio_expected=audio_expected,
+                                title_language=title.language,
                             )
                             muxed_paths.append(muxed_path)
                             if return_code >= 2:
@@ -1249,7 +1264,12 @@ class dl:
                 if pre_existing_tree:
                     cek_tree = pre_existing_tree
 
-                for kid in drm.kids:
+                need_license = False
+                all_kids = list(drm.kids)
+                if track_kid and track_kid not in all_kids:
+                    all_kids.append(track_kid)
+
+                for kid in all_kids:
                     if kid in drm.content_keys:
                         continue
 
@@ -1269,46 +1289,51 @@ class dl:
                             if not pre_existing_tree:
                                 table.add_row(cek_tree)
                             raise Widevine.Exceptions.CEKNotFound(msg)
+                        else:
+                            need_license = True
 
-                    if kid not in drm.content_keys and not vaults_only:
-                        from_vaults = drm.content_keys.copy()
+                    if kid not in drm.content_keys and cdm_only:
+                        need_license = True
 
-                        try:
-                            if self.service == "NF":
-                                drm.get_NF_content_keys(cdm=self.cdm, licence=licence, certificate=certificate)
-                            else:
-                                drm.get_content_keys(cdm=self.cdm, licence=licence, certificate=certificate)
-                        except Exception as e:
-                            if isinstance(e, (Widevine.Exceptions.EmptyLicense, Widevine.Exceptions.CEKNotFound)):
-                                msg = str(e)
-                            else:
-                                msg = f"An exception occurred in the Service's license function: {e}"
-                            cek_tree.add(f"[logging.level.error]{msg}")
-                            if not pre_existing_tree:
-                                table.add_row(cek_tree)
-                            raise e
+                if need_license and not vaults_only:
+                    from_vaults = drm.content_keys.copy()
 
-                        for kid_, key in drm.content_keys.items():
-                            if key == "0" * 32:
-                                key = f"[red]{key}[/]"
-                            label = f"[text2]{kid_.hex}:{key}{is_track_kid}"
-                            if not any(f"{kid_.hex}:{key}" in x.label for x in cek_tree.children):
-                                cek_tree.add(label)
+                    try:
+                        if self.service == "NF":
+                            drm.get_NF_content_keys(cdm=self.cdm, licence=licence, certificate=certificate)
+                        else:
+                            drm.get_content_keys(cdm=self.cdm, licence=licence, certificate=certificate)
+                    except Exception as e:
+                        if isinstance(e, (Widevine.Exceptions.EmptyLicense, Widevine.Exceptions.CEKNotFound)):
+                            msg = str(e)
+                        else:
+                            msg = f"An exception occurred in the Service's license function: {e}"
+                        cek_tree.add(f"[logging.level.error]{msg}")
+                        if not pre_existing_tree:
+                            table.add_row(cek_tree)
+                        raise e
 
-                        drm.content_keys = {
-                            kid_: key for kid_, key in drm.content_keys.items() if key and key.count("0") != len(key)
-                        }
+                    for kid_, key in drm.content_keys.items():
+                        if key == "0" * 32:
+                            key = f"[red]{key}[/]"
+                        is_track_kid_marker = ["", "*"][kid_ == track_kid]
+                        label = f"[text2]{kid_.hex}:{key}{is_track_kid_marker}"
+                        if not any(f"{kid_.hex}:{key}" in x.label for x in cek_tree.children):
+                            cek_tree.add(label)
 
-                        # The CDM keys may have returned blank content keys for KIDs we got from vaults.
-                        # So we re-add the keys from vaults earlier overwriting blanks or removed KIDs data.
-                        drm.content_keys.update(from_vaults)
+                    drm.content_keys = {
+                        kid_: key for kid_, key in drm.content_keys.items() if key and key.count("0") != len(key)
+                    }
 
-                        successful_caches = self.vaults.add_keys(drm.content_keys)
-                        self.log.info(
-                            f"Cached {len(drm.content_keys)} Key{'' if len(drm.content_keys) == 1 else 's'} to "
-                            f"{successful_caches}/{len(self.vaults)} Vaults"
-                        )
-                        break  # licensing twice will be unnecessary
+                    # The CDM keys may have returned blank content keys for KIDs we got from vaults.
+                    # So we re-add the keys from vaults earlier overwriting blanks or removed KIDs data.
+                    drm.content_keys.update(from_vaults)
+
+                    successful_caches = self.vaults.add_keys(drm.content_keys)
+                    self.log.info(
+                        f"Cached {len(drm.content_keys)} Key{'' if len(drm.content_keys) == 1 else 's'} to "
+                        f"{successful_caches}/{len(self.vaults)} Vaults"
+                    )
 
                 if track_kid and track_kid not in drm.content_keys:
                     msg = f"No Content Key for KID {track_kid.hex} was returned in the License"
@@ -1348,7 +1373,12 @@ class dl:
                 if pre_existing_tree:
                     cek_tree = pre_existing_tree
 
-                for kid in drm.kids:
+                need_license = False
+                all_kids = list(drm.kids)
+                if track_kid and track_kid not in all_kids:
+                    all_kids.append(track_kid)
+
+                for kid in all_kids:
                     if kid in drm.content_keys:
                         continue
 
@@ -1368,35 +1398,40 @@ class dl:
                             if not pre_existing_tree:
                                 table.add_row(cek_tree)
                             raise PlayReady.Exceptions.CEKNotFound(msg)
+                        else:
+                            need_license = True
 
-                    if kid not in drm.content_keys and not vaults_only:
-                        from_vaults = drm.content_keys.copy()
+                    if kid not in drm.content_keys and cdm_only:
+                        need_license = True
 
-                        try:
-                            drm.get_content_keys(cdm=self.cdm, licence=licence, certificate=certificate)
-                        except Exception as e:
-                            if isinstance(e, (PlayReady.Exceptions.EmptyLicense, PlayReady.Exceptions.CEKNotFound)):
-                                msg = str(e)
-                            else:
-                                msg = f"An exception occurred in the Service's license function: {e}"
-                            cek_tree.add(f"[logging.level.error]{msg}")
-                            if not pre_existing_tree:
-                                table.add_row(cek_tree)
-                            raise e
+                if need_license and not vaults_only:
+                    from_vaults = drm.content_keys.copy()
 
-                        for kid_, key in drm.content_keys.items():
-                            label = f"[text2]{kid_.hex}:{key}{is_track_kid}"
-                            if not any(f"{kid_.hex}:{key}" in x.label for x in cek_tree.children):
-                                cek_tree.add(label)
+                    try:
+                        drm.get_content_keys(cdm=self.cdm, licence=licence, certificate=certificate)
+                    except Exception as e:
+                        if isinstance(e, (PlayReady.Exceptions.EmptyLicense, PlayReady.Exceptions.CEKNotFound)):
+                            msg = str(e)
+                        else:
+                            msg = f"An exception occurred in the Service's license function: {e}"
+                        cek_tree.add(f"[logging.level.error]{msg}")
+                        if not pre_existing_tree:
+                            table.add_row(cek_tree)
+                        raise e
 
-                        drm.content_keys.update(from_vaults)
+                    for kid_, key in drm.content_keys.items():
+                        is_track_kid_marker = ["", "*"][kid_ == track_kid]
+                        label = f"[text2]{kid_.hex}:{key}{is_track_kid_marker}"
+                        if not any(f"{kid_.hex}:{key}" in x.label for x in cek_tree.children):
+                            cek_tree.add(label)
 
-                        successful_caches = self.vaults.add_keys(drm.content_keys)
-                        self.log.info(
-                            f"Cached {len(drm.content_keys)} Key{'' if len(drm.content_keys) == 1 else 's'} to "
-                            f"{successful_caches}/{len(self.vaults)} Vaults"
-                        )
-                        break
+                    drm.content_keys.update(from_vaults)
+
+                    successful_caches = self.vaults.add_keys(drm.content_keys)
+                    self.log.info(
+                        f"Cached {len(drm.content_keys)} Key{'' if len(drm.content_keys) == 1 else 's'} to "
+                        f"{successful_caches}/{len(self.vaults)} Vaults"
+                    )
 
                 if track_kid and track_kid not in drm.content_keys:
                     msg = f"No Content Key for KID {track_kid.hex} was returned in the License"

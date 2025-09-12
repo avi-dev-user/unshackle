@@ -473,6 +473,83 @@ class Track:
                 if tenc.key_ID.int != 0:
                     return tenc.key_ID
 
+    def load_drm_if_needed(self, service=None) -> bool:
+        """
+        Load DRM information for this track if it was deferred during parsing.
+
+        Args:
+            service: Service instance that can fetch track-specific DRM info
+
+        Returns:
+            True if DRM was loaded or already present, False if failed
+        """
+        if not getattr(self, "needs_drm_loading", False):
+            return bool(self.drm)
+
+        if self.drm:
+            self.needs_drm_loading = False
+            return True
+
+        if not service or not hasattr(service, "get_track_drm"):
+            return self.load_drm_from_playlist()
+
+        try:
+            track_drm = service.get_track_drm(self)
+            if track_drm:
+                self.drm = track_drm if isinstance(track_drm, list) else [track_drm]
+                self.needs_drm_loading = False
+                return True
+        except Exception as e:
+            raise ValueError(f"Failed to load DRM from service for track {self.id}: {e}")
+
+        return self.load_drm_from_playlist()
+
+    def load_drm_from_playlist(self) -> bool:
+        """
+        Fallback method to load DRM by fetching this track's individual playlist.
+        """
+        if self.drm:
+            self.needs_drm_loading = False
+            return True
+
+        try:
+            import m3u8
+            from pyplayready.cdm import Cdm as PlayReadyCdm
+            from pyplayready.system.pssh import PSSH as PR_PSSH
+            from pywidevine.cdm import Cdm as WidevineCdm
+            from pywidevine.pssh import PSSH as WV_PSSH
+
+            session = getattr(self, "session", None) or Session()
+
+            response = session.get(self.url)
+            playlist = m3u8.loads(response.text, self.url)
+
+            drm_list = []
+
+            for key in playlist.keys or []:
+                if not key or not key.keyformat:
+                    continue
+
+                fmt = key.keyformat.lower()
+                if fmt == WidevineCdm.urn:
+                    pssh_b64 = key.uri.split(",")[-1]
+                    drm = Widevine(pssh=WV_PSSH(pssh_b64))
+                    drm_list.append(drm)
+                elif fmt == PlayReadyCdm or "com.microsoft.playready" in fmt:
+                    pssh_b64 = key.uri.split(",")[-1]
+                    drm = PlayReady(pssh=PR_PSSH(pssh_b64), pssh_b64=pssh_b64)
+                    drm_list.append(drm)
+
+            if drm_list:
+                self.drm = drm_list
+                self.needs_drm_loading = False
+                return True
+
+        except Exception as e:
+            raise ValueError(f"Failed to load DRM from playlist for track {self.id}: {e}")
+
+        return False
+
     def get_init_segment(
         self,
         maximum_size: int = 20000,
