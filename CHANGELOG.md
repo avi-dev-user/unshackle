@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.6] - 2025-09-13
+
+### Added
+
+- **Quality-Based CDM Selection**: Dynamic CDM selection based on video resolution
+  - Automatically selects appropriate CDM (L3/L1) based on video track quality
+  - Supports quality thresholds in configuration (>=, >, <=, <, exact match)
+  - Pre-selects optimal CDM based on highest quality across all video tracks
+  - Maintains backward compatibility with existing CDM configurations
+- **Automatic Audio Language Metadata**: Intelligent embedded audio language detection
+  - Automatically sets audio language metadata when no separate audio tracks exist
+  - Smart video track selection based on title language with fallbacks
+  - Enhanced FFmpeg repackaging with audio stream metadata injection
+- **Lazy DRM Loading**: Deferred DRM loading for multi-track key retrieval optimization
+  - Add deferred DRM loading to M3U8 parser to mark tracks for later processing
+  - Just-in-time DRM loading during download process for better performance
+
+### Changed
+
+- **Enhanced CDM Management**: Improved CDM switching logic for multi-quality downloads
+  - CDM selection now based on highest quality track to avoid inefficient switching
+  - Quality-based selection only within same DRM type (Widevine-to-Widevine, PlayReady-to-PlayReady)
+  - Single CDM used per session for better performance and reliability
+
+### Fixed
+
+- **Vault Caching Issues**: Fixed vault count display and NoneType iteration errors
+  - Fix 'NoneType' object is not iterable error in DecryptLabsRemoteCDM
+  - Fix vault count display showing 0/3 instead of actual successful vault count
+- **Service Name Transmission**: Resolved DecryptLabsRemoteCDM service name issues
+  - Fixed DecryptLabsRemoteCDM sending 'generic' instead of proper service names
+  - Added case-insensitive vault lookups for SQLite/MySQL vaults
+  - Added local vault integration to DecryptLabsRemoteCDM
+- **Import Organization**: Improved import ordering and code formatting
+  - Reorder imports in decrypt_labs_remote_cdm.py for better organization
+  - Clean up trailing whitespace in vault files
+
+### Configuration
+
+- **New CDM Configuration Format**: Extended `cdm:` section supports quality-based selection
+  ```yaml
+  cdm:
+    SERVICE_NAME:
+      "<=1080": l3_cdm_name
+      ">1080": l1_cdm_name
+      default: l3_cdm_name
+  ```
+
 ## [1.4.5] - 2025-09-09
 
 ### Added
