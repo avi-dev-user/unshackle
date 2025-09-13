@@ -58,15 +58,8 @@ from unshackle.core.tracks.attachment import Attachment
 from unshackle.core.tracks.hybrid import Hybrid
 from unshackle.core.utilities import get_system_fonts, is_close_match, time_elapsed_since
 from unshackle.core.utils import tags
-from unshackle.core.utils.click_types import (
-    LANGUAGE_RANGE,
-    QUALITY_LIST,
-    SEASON_RANGE,
-    ContextData,
-    MultipleChoice,
-    SubtitleCodecChoice,
-    VideoCodecChoice,
-)
+from unshackle.core.utils.click_types import (LANGUAGE_RANGE, QUALITY_LIST, SEASON_RANGE, ContextData, MultipleChoice,
+                                              SubtitleCodecChoice, VideoCodecChoice)
 from unshackle.core.utils.collections import merge_dict
 from unshackle.core.utils.subprocess import ffprobe
 from unshackle.core.vaults import Vaults
@@ -876,6 +869,33 @@ class dl:
             download_table = Table.grid()
             download_table.add_row(selected_tracks)
 
+            video_tracks = title.tracks.videos
+            if video_tracks:
+                highest_quality = max((track.height for track in video_tracks if track.height), default=0)
+                if highest_quality > 0:
+                    if isinstance(self.cdm, (WidevineCdm, DecryptLabsRemoteCDM)) and not (
+                        isinstance(self.cdm, DecryptLabsRemoteCDM) and self.cdm.is_playready
+                    ):
+                        quality_based_cdm = self.get_cdm(
+                            self.service, self.profile, drm="widevine", quality=highest_quality
+                        )
+                        if quality_based_cdm and quality_based_cdm != self.cdm:
+                            self.log.info(
+                                f"Pre-selecting Widevine CDM based on highest quality {highest_quality}p across all video tracks"
+                            )
+                            self.cdm = quality_based_cdm
+                    elif isinstance(self.cdm, (PlayReadyCdm, DecryptLabsRemoteCDM)) and (
+                        isinstance(self.cdm, DecryptLabsRemoteCDM) and self.cdm.is_playready
+                    ):
+                        quality_based_cdm = self.get_cdm(
+                            self.service, self.profile, drm="playready", quality=highest_quality
+                        )
+                        if quality_based_cdm and quality_based_cdm != self.cdm:
+                            self.log.info(
+                                f"Pre-selecting PlayReady CDM based on highest quality {highest_quality}p across all video tracks"
+                            )
+                            self.cdm = quality_based_cdm
+
             dl_start_time = time.time()
 
             if skip_dl:
@@ -1237,6 +1257,9 @@ class dl:
         if not drm:
             return
 
+        if isinstance(track, Video) and track.height:
+            pass
+
         if isinstance(drm, Widevine):
             if not isinstance(self.cdm, (WidevineCdm, DecryptLabsRemoteCDM)) or (
                 isinstance(self.cdm, DecryptLabsRemoteCDM) and self.cdm.is_playready
@@ -1245,6 +1268,7 @@ class dl:
                 if widevine_cdm:
                     self.log.info("Switching to Widevine CDM for Widevine content")
                     self.cdm = widevine_cdm
+
         elif isinstance(drm, PlayReady):
             if not isinstance(self.cdm, (PlayReadyCdm, DecryptLabsRemoteCDM)) or (
                 isinstance(self.cdm, DecryptLabsRemoteCDM) and not self.cdm.is_playready
@@ -1517,9 +1541,11 @@ class dl:
         service: str,
         profile: Optional[str] = None,
         drm: Optional[str] = None,
+        quality: Optional[int] = None,
     ) -> Optional[object]:
         """
         Get CDM for a specified service (either Local or Remote CDM).
+        Now supports quality-based selection when quality is provided.
         Raises a ValueError if there's a problem getting a CDM.
         """
         cdm_name = config.cdm.get(service) or config.cdm.get("default")
@@ -1527,23 +1553,82 @@ class dl:
             return None
 
         if isinstance(cdm_name, dict):
-            lower_keys = {k.lower(): v for k, v in cdm_name.items()}
-            if {"widevine", "playready"} & lower_keys.keys():
-                drm_key = None
-                if drm:
-                    drm_key = {
-                        "wv": "widevine",
-                        "widevine": "widevine",
-                        "pr": "playready",
-                        "playready": "playready",
-                    }.get(drm.lower())
-                cdm_name = lower_keys.get(drm_key or "widevine") or lower_keys.get("playready")
-            else:
-                if not profile:
+            if quality:
+                quality_match = None
+                quality_keys = []
+
+                for key in cdm_name.keys():
+                    if (
+                        isinstance(key, str)
+                        and any(op in key for op in [">=", ">", "<=", "<"])
+                        or (isinstance(key, str) and key.isdigit())
+                    ):
+                        quality_keys.append(key)
+
+                def sort_quality_key(key):
+                    if key.isdigit():
+                        return (0, int(key))  # Exact matches first
+                    elif key.startswith(">="):
+                        return (1, -int(key[2:]))  # >= descending
+                    elif key.startswith(">"):
+                        return (1, -int(key[1:]))  # > descending
+                    elif key.startswith("<="):
+                        return (2, int(key[2:]))  # <= ascending
+                    elif key.startswith("<"):
+                        return (2, int(key[1:]))  # < ascending
+                    return (3, 0)  # Other keys last
+
+                quality_keys.sort(key=sort_quality_key)
+
+                for key in quality_keys:
+                    if key.isdigit() and quality == int(key):
+                        quality_match = cdm_name[key]
+                        self.log.info(f"Selected CDM based on exact quality match {quality}p: {quality_match}")
+                        break
+                    elif key.startswith(">="):
+                        threshold = int(key[2:])
+                        if quality >= threshold:
+                            quality_match = cdm_name[key]
+                            self.log.info(f"Selected CDM based on quality {quality}p >= {threshold}p: {quality_match}")
+                            break
+                    elif key.startswith(">"):
+                        threshold = int(key[1:])
+                        if quality > threshold:
+                            quality_match = cdm_name[key]
+                            self.log.info(f"Selected CDM based on quality {quality}p > {threshold}p: {quality_match}")
+                            break
+                    elif key.startswith("<="):
+                        threshold = int(key[2:])
+                        if quality <= threshold:
+                            quality_match = cdm_name[key]
+                            self.log.info(f"Selected CDM based on quality {quality}p <= {threshold}p: {quality_match}")
+                            break
+                    elif key.startswith("<"):
+                        threshold = int(key[1:])
+                        if quality < threshold:
+                            quality_match = cdm_name[key]
+                            self.log.info(f"Selected CDM based on quality {quality}p < {threshold}p: {quality_match}")
+                            break
+
+                if quality_match:
+                    cdm_name = quality_match
+
+            if isinstance(cdm_name, dict):
+                lower_keys = {k.lower(): v for k, v in cdm_name.items()}
+                if {"widevine", "playready"} & lower_keys.keys():
+                    drm_key = None
+                    if drm:
+                        drm_key = {
+                            "wv": "widevine",
+                            "widevine": "widevine",
+                            "pr": "playready",
+                            "playready": "playready",
+                        }.get(drm.lower())
+                    cdm_name = lower_keys.get(drm_key or "widevine") or lower_keys.get("playready")
+                else:
+                    cdm_name = cdm_name.get(profile) or cdm_name.get("default") or config.cdm.get("default")
+                if not cdm_name:
                     return None
-                cdm_name = cdm_name.get(profile) or config.cdm.get("default")
-            if not cdm_name:
-                return None
 
         cdm_api = next(iter(x for x in config.remote_cdm if x["name"] == cdm_name), None)
         if cdm_api:
