@@ -1630,7 +1630,7 @@ class dl:
                 if not cdm_name:
                     return None
 
-        cdm_api = next(iter(x for x in config.remote_cdm if x["name"] == cdm_name), None)
+        cdm_api = next(iter(x.copy() for x in config.remote_cdm if x["name"] == cdm_name), None)
         if cdm_api:
             is_decrypt_lab = True if cdm_api.get("type") == "decrypt_labs" else False
             if is_decrypt_lab:
