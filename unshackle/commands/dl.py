@@ -880,7 +880,7 @@ class dl:
                             self.service, self.profile, drm="widevine", quality=highest_quality
                         )
                         if quality_based_cdm and quality_based_cdm != self.cdm:
-                            self.log.info(
+                            self.log.debug(
                                 f"Pre-selecting Widevine CDM based on highest quality {highest_quality}p across all video tracks"
                             )
                             self.cdm = quality_based_cdm
@@ -891,7 +891,7 @@ class dl:
                             self.service, self.profile, drm="playready", quality=highest_quality
                         )
                         if quality_based_cdm and quality_based_cdm != self.cdm:
-                            self.log.info(
+                            self.log.debug(
                                 f"Pre-selecting PlayReady CDM based on highest quality {highest_quality}p across all video tracks"
                             )
                             self.cdm = quality_based_cdm
@@ -1583,31 +1583,31 @@ class dl:
                 for key in quality_keys:
                     if key.isdigit() and quality == int(key):
                         quality_match = cdm_name[key]
-                        self.log.info(f"Selected CDM based on exact quality match {quality}p: {quality_match}")
+                        self.log.debug(f"Selected CDM based on exact quality match {quality}p: {quality_match}")
                         break
                     elif key.startswith(">="):
                         threshold = int(key[2:])
                         if quality >= threshold:
                             quality_match = cdm_name[key]
-                            self.log.info(f"Selected CDM based on quality {quality}p >= {threshold}p: {quality_match}")
+                            self.log.debug(f"Selected CDM based on quality {quality}p >= {threshold}p: {quality_match}")
                             break
                     elif key.startswith(">"):
                         threshold = int(key[1:])
                         if quality > threshold:
                             quality_match = cdm_name[key]
-                            self.log.info(f"Selected CDM based on quality {quality}p > {threshold}p: {quality_match}")
+                            self.log.debug(f"Selected CDM based on quality {quality}p > {threshold}p: {quality_match}")
                             break
                     elif key.startswith("<="):
                         threshold = int(key[2:])
                         if quality <= threshold:
                             quality_match = cdm_name[key]
-                            self.log.info(f"Selected CDM based on quality {quality}p <= {threshold}p: {quality_match}")
+                            self.log.debug(f"Selected CDM based on quality {quality}p <= {threshold}p: {quality_match}")
                             break
                     elif key.startswith("<"):
                         threshold = int(key[1:])
                         if quality < threshold:
                             quality_match = cdm_name[key]
-                            self.log.info(f"Selected CDM based on quality {quality}p < {threshold}p: {quality_match}")
+                            self.log.debug(f"Selected CDM based on quality {quality}p < {threshold}p: {quality_match}")
                             break
 
                 if quality_match:
