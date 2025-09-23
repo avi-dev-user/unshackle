@@ -173,6 +173,12 @@ class dl:
         help="Language wanted for Audio, overrides -l/--lang for audio tracks.",
     )
     @click.option("-sl", "--s-lang", type=LANGUAGE_RANGE, default=["all"], help="Language wanted for Subtitles.")
+    @click.option(
+        "--require-subs",
+        type=LANGUAGE_RANGE,
+        default=[],
+        help="Required subtitle languages. Downloads all subtitles only if these languages exist. Cannot be used with --s-lang.",
+    )
     @click.option("-fs", "--forced-subs", is_flag=True, default=False, help="Include forced subtitle tracks.")
     @click.option(
         "--proxy",
@@ -263,6 +269,13 @@ class dl:
     @click.option(
         "--reset-cache", "reset_cache", is_flag=True, default=False, help="Clear title cache before fetching."
     )
+    @click.option(
+        "--best-available",
+        "best_available",
+        is_flag=True,
+        default=False,
+        help="Continue with best available quality if requested resolutions are not available.",
+    )
     @click.pass_context
     def cli(ctx: click.Context, **kwargs: Any) -> dl:
         return dl(ctx, **kwargs)
@@ -321,6 +334,16 @@ class dl:
                 vault_name = vault.get("name", vault_type)
                 vault_copy = vault.copy()
                 del vault_copy["type"]
+
+                if vault_type.lower() == "api" and "decrypt_labs" in vault_name.lower():
+                    if "token" not in vault_copy or not vault_copy["token"]:
+                        if config.decrypt_labs_api_key:
+                            vault_copy["token"] = config.decrypt_labs_api_key
+                        else:
+                            self.log.warning(
+                                f"No token provided for DecryptLabs vault '{vault_name}' and no global "
+                                "decrypt_labs_api_key configured"
+                            )
 
                 if vault_type.lower() == "sqlite":
                     try:
@@ -442,6 +465,7 @@ class dl:
         v_lang: list[str],
         a_lang: list[str],
         s_lang: list[str],
+        require_subs: list[str],
         forced_subs: bool,
         sub_format: Optional[Subtitle.Codec],
         video_only: bool,
@@ -462,12 +486,17 @@ class dl:
         no_source: bool,
         workers: Optional[int],
         downloads: int,
+        best_available: bool,
         *_: Any,
         **__: Any,
     ) -> None:
         self.tmdb_searched = False
         self.search_source = None
         start_time = time.time()
+
+        if require_subs and s_lang != ["all"]:
+            self.log.error("--require-subs and --s-lang cannot be used together")
+            sys.exit(1)
 
         # Check if dovi_tool is available when hybrid mode is requested
         if any(r == Video.Range.HYBRID for r in range_):
@@ -703,8 +732,14 @@ class dl:
                                 res_list = ", ".join([f"{x}p" for x in missing_resolutions[:-1]]) + " or "
                             res_list = f"{res_list}{missing_resolutions[-1]}p"
                             plural = "s" if len(missing_resolutions) > 1 else ""
-                            self.log.error(f"There's no {res_list} Video Track{plural}...")
-                            sys.exit(1)
+
+                            if best_available:
+                                self.log.warning(
+                                    f"There's no {res_list} Video Track{plural}, continuing with available qualities..."
+                                )
+                            else:
+                                self.log.error(f"There's no {res_list} Video Track{plural}...")
+                                sys.exit(1)
 
                     # choose best track by range and quality
                     if any(r == Video.Range.HYBRID for r in range_):
@@ -740,7 +775,21 @@ class dl:
                         title.tracks.videos = selected_videos
 
                     # filter subtitle tracks
-                    if s_lang and "all" not in s_lang:
+                    if require_subs:
+                        missing_langs = [
+                            lang
+                            for lang in require_subs
+                            if not any(is_close_match(lang, [sub.language]) for sub in title.tracks.subtitles)
+                        ]
+
+                        if missing_langs:
+                            self.log.error(f"Required subtitle language(s) not found: {', '.join(missing_langs)}")
+                            sys.exit(1)
+
+                        self.log.info(
+                            f"Required languages found ({', '.join(require_subs)}), downloading all available subtitles"
+                        )
+                    elif s_lang and "all" not in s_lang:
                         missing_langs = [
                             lang_
                             for lang_ in s_lang
@@ -1636,6 +1685,15 @@ class dl:
             if is_decrypt_lab:
                 del cdm_api["name"]
                 del cdm_api["type"]
+
+                if "secret" not in cdm_api or not cdm_api["secret"]:
+                    if config.decrypt_labs_api_key:
+                        cdm_api["secret"] = config.decrypt_labs_api_key
+                    else:
+                        raise ValueError(
+                            f"No secret provided for DecryptLabs CDM '{cdm_name}' and no global "
+                            "decrypt_labs_api_key configured"
+                        )
 
                 # All DecryptLabs CDMs use DecryptLabsRemoteCDM
                 return DecryptLabsRemoteCDM(service_name=service, vaults=self.vaults, **cdm_api)
