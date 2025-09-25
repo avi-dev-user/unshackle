@@ -13,6 +13,7 @@ from typing import Any, Callable, Iterable, Optional, Union
 from uuid import UUID
 from zlib import crc32
 
+from curl_cffi.requests import Session as CurlSession
 from langcodes import Language
 from pyplayready.cdm import Cdm as PlayReadyCdm
 from pywidevine.cdm import Cdm as WidevineCdm
@@ -585,8 +586,8 @@ class Track:
             raise TypeError(f"Expected url to be a {str}, not {type(url)}")
         if not isinstance(byte_range, (str, type(None))):
             raise TypeError(f"Expected byte_range to be a {str}, not {type(byte_range)}")
-        if not isinstance(session, (Session, type(None))):
-            raise TypeError(f"Expected session to be a {Session}, not {type(session)}")
+        if not isinstance(session, (Session, CurlSession, type(None))):
+            raise TypeError(f"Expected session to be a {Session} or {CurlSession}, not {type(session)}")
 
         if not url:
             if self.descriptor != self.Descriptor.URL:
