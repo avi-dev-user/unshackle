@@ -181,7 +181,7 @@ class Tracks:
         log = logging.getLogger("Tracks")
 
         if duplicates:
-            log.warning(f" - Found and skipped {duplicates} duplicate tracks...")
+            log.debug(f" - Found and skipped {duplicates} duplicate tracks...")
 
     def sort_videos(self, by_language: Optional[Sequence[Union[str, Language]]] = None) -> None:
         """Sort video tracks by bitrate, and optionally language."""

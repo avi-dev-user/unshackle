@@ -88,6 +88,7 @@ class Config:
         self.tag_group_name: bool = kwargs.get("tag_group_name", True)
         self.tag_imdb_tmdb: bool = kwargs.get("tag_imdb_tmdb", True)
         self.tmdb_api_key: str = kwargs.get("tmdb_api_key") or ""
+        self.decrypt_labs_api_key: str = kwargs.get("decrypt_labs_api_key") or ""
         self.update_checks: bool = kwargs.get("update_checks", True)
         self.update_check_interval: int = kwargs.get("update_check_interval", 24)
         self.scene_naming: bool = kwargs.get("scene_naming", True)
