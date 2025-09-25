@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.7] - 2025-09-25
+
+### Added
+
+- **curl_cffi Session Support**: Enhanced anti-bot protection with browser impersonation
+  - Added new session utility with curl_cffi support for bypassing anti-bot measures
+  - Browser impersonation support for Chrome, Firefox, and Safari user agents
+  - Full backward compatibility with requests.Session maintained
+  - Suppressed HTTPS proxy warnings for improved user experience
+- **Download Retry Functionality**: Configurable retry mechanism for failed downloads
+  - Added retry count option to download function for improved reliability
+- **Subtitle Requirements Options**: Enhanced subtitle download control
+  - Added options for required subtitles in download command
+  - Better control over subtitle track selection and requirements
+- **Quality Selection Enhancement**: Improved quality selection options
+  - Added best available quality option in download command for optimal track selection
+- **DecryptLabs API Integration**: Enhanced remote CDM configuration
+  - Added decrypt_labs_api_key to Config initialization for better API integration
+
+### Changed
+
+- **Manifest Parser Updates**: Enhanced compatibility across all parsers
+  - Updated DASH, HLS, ISM, and M3U8 parsers to accept curl_cffi sessions
+  - Improved cookie handling compatibility between requests and curl_cffi
+- **Logging Improvements**: Reduced log verbosity for better user experience
+  - Changed duplicate track log level to debug to reduce console noise
+  - Dynamic CDM selection messages moved to debug-only output
+
+### Fixed
+
+- **Remote CDM Reuse**: Fixed KeyError in dynamic CDM selection
+  - Prevents KeyError when reusing remote CDMs in dynamic selection process
+  - Creates copy of CDM dictionary before modification to prevent configuration mutation
+  - Allows same CDM to be selected multiple times within session without errors
+
 ## [1.4.6] - 2025-09-13
 
 ### Added
