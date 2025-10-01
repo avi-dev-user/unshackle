@@ -461,7 +461,7 @@ class Subtitle(Track):
         - 'subby': Always uses subby with CommonIssuesFixer
         - 'subtitleedit': Uses SubtitleEdit when available, falls back to pycaption
         - 'pycaption': Uses only pycaption library
-        - 'pysubs2': Uses pysubs2 library (same as auto)
+        - 'pysubs2': Uses pysubs2 library
         """
         # Check configuration for conversion method
         conversion_method = config.subtitle.get("conversion_method", "auto")
@@ -475,8 +475,6 @@ class Subtitle(Track):
         elif conversion_method == "pysubs2":
             return self.convert_with_pysubs2(codec)
         elif conversion_method == "auto":
-            return self.convert_with_pysubs2(codec)
-        else:
             return self._convert_standard(codec)
 
     def _convert_pycaption_only(self, codec: Subtitle.Codec) -> Path:
