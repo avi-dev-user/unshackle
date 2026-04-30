@@ -98,7 +98,13 @@ class Config:
 
         self.language_tags: dict = kwargs.get("language_tags") or {}
         self.output_template: dict = kwargs.get("output_template") or {}
-        self.folder_template: str = self.output_template.pop("folder", "") or ""
+        folder_cfg = self.output_template.pop("folder", "")
+        self.folder_template: str = ""
+        self.folder_templates: dict = {}
+        if isinstance(folder_cfg, dict):
+            self.folder_templates = {k: v for k, v in folder_cfg.items() if isinstance(v, str) and v}
+        elif isinstance(folder_cfg, str):
+            self.folder_template = folder_cfg or ""
 
         if kwargs.get("scene_naming") is not None:
             raise SystemExit(
@@ -158,6 +164,11 @@ class Config:
         all_templates = dict(self.output_template)
         if self.folder_template:
             all_templates["folder"] = self.folder_template
+        for kind, tmpl in self.folder_templates.items():
+            if kind not in {"movies", "series", "songs"}:
+                warnings.warn(f"Unknown folder template kind '{kind}' (expected movies/series/songs)")
+                continue
+            all_templates[f"folder.{kind}"] = tmpl
 
         for template_type, template_str in all_templates.items():
             if not isinstance(template_str, str):
@@ -177,6 +188,18 @@ class Config:
 
             if not template_str.strip():
                 warnings.warn(f"Template '{template_type}' is empty")
+
+    def get_folder_template(self, kind: str) -> str:
+        """Resolve the folder template for the given title kind.
+
+        kind: one of "movies", "series", "songs".
+        Falls back to the legacy single-string folder template, then "".
+        """
+        if self.folder_templates:
+            tmpl = self.folder_templates.get(kind)
+            if tmpl:
+                return tmpl
+        return self.folder_template or ""
 
     def get_template_separator(self, template_type: str = "movies") -> str:
         """Get the filename separator for the given template type.
