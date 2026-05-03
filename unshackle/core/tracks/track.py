@@ -28,6 +28,25 @@ from unshackle.core.utilities import get_boxes, try_ensure_utf8
 from unshackle.core.utils.subprocess import ffprobe
 
 
+def direct_session(session: Union[Session, "RnetSession"]) -> Session:
+    """Vanilla requests.Session with copied headers/cookies, no proxy."""
+    new = Session()
+    headers = getattr(session, "headers", None)
+    if headers is not None:
+        try:
+            new.headers.update(dict(headers))
+        except Exception:
+            pass
+    cookies = getattr(session, "cookies", None)
+    if cookies is not None:
+        jar = getattr(cookies, "jar", None)
+        try:
+            new.cookies.update(jar if jar is not None else cookies)
+        except Exception:
+            pass
+    return new
+
+
 class Track:
     class Descriptor(Enum):
         URL = 1  # Direct URL, nothing fancy
@@ -188,6 +207,7 @@ class Track:
         progress: Optional[partial] = None,
         *,
         cdm: Optional[object] = None,
+        no_proxy_download: bool = False,
     ):
         """Download and optionally Decrypt this Track."""
         from unshackle.core.manifests import DASH, HLS, ISM
@@ -202,6 +222,11 @@ class Track:
         log = logging.getLogger("track")
 
         proxy = next(iter(session.proxies.values()), None)
+
+        dl_session = session
+        if no_proxy_download and proxy:
+            dl_session = direct_session(session)
+            proxy = None
 
         track_type = self.__class__.__name__
         save_path = config.directories.temp / f"{track_type}_{self.id}.mp4"
@@ -237,7 +262,7 @@ class Track:
                     save_path=save_path,
                     save_dir=save_dir,
                     progress=progress,
-                    session=session,
+                    session=dl_session,
                     proxy=proxy,
                     max_workers=max_workers,
                     license_widevine=prepare_drm,
@@ -249,7 +274,7 @@ class Track:
                     save_path=save_path,
                     save_dir=save_dir,
                     progress=progress,
-                    session=session,
+                    session=dl_session,
                     proxy=proxy,
                     max_workers=max_workers,
                     license_widevine=prepare_drm,
@@ -261,7 +286,7 @@ class Track:
                     save_path=save_path,
                     save_dir=save_dir,
                     progress=progress,
-                    session=session,
+                    session=dl_session,
                     proxy=proxy,
                     max_workers=max_workers,
                     license_widevine=prepare_drm,
@@ -320,11 +345,11 @@ class Track:
                             urls=self.url,
                             output_dir=save_path.parent,
                             filename=save_path.name,
-                            headers=session.headers,
-                            cookies=session.cookies,
+                            headers=dl_session.headers,
+                            cookies=dl_session.cookies,
                             proxy=proxy,
                             max_workers=max_workers,
-                            session=session,
+                            session=dl_session,
                         ):
                             file_downloaded = status_update.get("file_downloaded")
                             if not file_downloaded:
@@ -662,29 +687,25 @@ class Track:
             if hasattr(self, "data") and self.data.get("audio_language"):
                 audio_lang = self.data["audio_language"]
                 audio_name = self.data.get("audio_language_name", audio_lang)
-                args.extend(
-                    [
-                        "-metadata:s:a:0",
-                        f"language={audio_lang}",
-                        "-metadata:s:a:0",
-                        f"title={audio_name}",
-                        "-metadata:s:a:0",
-                        f"handler_name={audio_name}",
-                    ]
-                )
+                args.extend([
+                    "-metadata:s:a:0",
+                    f"language={audio_lang}",
+                    "-metadata:s:a:0",
+                    f"title={audio_name}",
+                    "-metadata:s:a:0",
+                    f"handler_name={audio_name}",
+                ])
 
-            args.extend(
-                [
-                    # Following are very important!
-                    "-map_metadata",
-                    "-1",  # don't transfer metadata to output file
-                    "-fflags",
-                    "bitexact",  # only have minimal tag data, reproducible mux
-                    "-codec",
-                    "copy",
-                    str(output_path),
-                ]
-            )
+            args.extend([
+                # Following are very important!
+                "-map_metadata",
+                "-1",  # don't transfer metadata to output file
+                "-fflags",
+                "bitexact",  # only have minimal tag data, reproducible mux
+                "-codec",
+                "copy",
+                str(output_path),
+            ])
 
             subprocess.run(
                 args,
