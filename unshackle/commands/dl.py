@@ -495,6 +495,12 @@ class dl:
         help="Only use CDM, or only use Key Vaults for retrieval of Decryption Keys.",
     )
     @click.option("--no-proxy", is_flag=True, default=False, help="Force disable all proxy use.")
+    @click.option(
+        "--no-proxy-download",
+        is_flag=True,
+        default=False,
+        help="Bypass proxy for segment downloads only. Manifest, license, and auth still use proxy.",
+    )
     @click.option("--no-folder", is_flag=True, default=False, help="Disable folder creation for TV Shows.")
     @click.option(
         "--no-source", is_flag=True, default=False, help="Disable the source tag from the output file name and path."
@@ -1032,6 +1038,7 @@ class dl:
         export: bool,
         cdm_only: Optional[bool],
         no_proxy: bool,
+        no_proxy_download: bool,
         no_folder: bool,
         no_source: bool,
         no_mux: bool,
@@ -1447,6 +1454,9 @@ class dl:
             if no_chapters:
                 console.log("Skipped chapters as --no-chapters was used...")
                 title.tracks.chapters = []
+
+            if no_proxy_download and any(service.session.proxies.values()):
+                console.log("Bypassing proxy for downloads as --no-proxy-download was used...")
 
             tracks_label = "Getting Remote Tracks..." if self.is_remote else "Getting Tracks..."
             with console.status(tracks_label, spinner="dots"):
@@ -2070,6 +2080,7 @@ class dl:
                                 pool.submit(
                                     track.download,
                                     session=track.session or service.session,
+                                    no_proxy_download=no_proxy_download,
                                     prepare_drm=partial(
                                         partial(self.prepare_drm, table=download_table),
                                         track=track,
