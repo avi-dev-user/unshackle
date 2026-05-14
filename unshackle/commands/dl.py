@@ -558,6 +558,7 @@ class dl:
 
     DRM_TABLE_LOCK = Lock()
     EXPORT_LOCK = Lock()
+    LICENSE_KEY_CACHE: dict[UUID, str] = {}
 
     def __init__(
         self,
@@ -2824,6 +2825,26 @@ class dl:
 
                     is_track_kid = ["", "*"][kid == track_kid]
 
+                    cached_key = self.LICENSE_KEY_CACHE.get(kid)
+                    if cached_key:
+                        drm.content_keys[kid] = cached_key
+                        label = f"[text2]{kid.hex}:{cached_key}{is_track_kid} from cache"
+                        if not any(f"{kid.hex}:{cached_key}" in x.label for x in cek_tree.children):
+                            cek_tree.add(label)
+                        if self.debug_logger:
+                            self.debug_logger.log(
+                                level="INFO",
+                                operation="license_cache_hit",
+                                service=self.service,
+                                context={
+                                    "kid": kid.hex,
+                                    "content_key": cached_key,
+                                    "track": str(track),
+                                    "drm_type": "Widevine",
+                                },
+                            )
+                        continue
+
                     if not cdm_only:
                         content_key, vault_used = self.vaults.get_key(kid)
                         if content_key:
@@ -2832,6 +2853,7 @@ class dl:
                             if not any(f"{kid.hex}:{content_key}" in x.label for x in cek_tree.children):
                                 cek_tree.add(label)
                             self.vaults.add_key(kid, content_key, excluding=vault_used)
+                            self.LICENSE_KEY_CACHE[kid] = content_key
 
                             if self.debug_logger:
                                 self.debug_logger.log_vault_query(
@@ -2936,6 +2958,8 @@ class dl:
                     # So we re-add the keys from vaults earlier overwriting blanks or removed KIDs data.
                     drm.content_keys.update(from_vaults)
 
+                    self.LICENSE_KEY_CACHE.update(drm.content_keys)
+
                     successful_caches = self.vaults.add_keys(drm.content_keys)
                     self.log.info(
                         f"Cached {len(drm.content_keys)} Key{'' if len(drm.content_keys) == 1 else 's'} to "
@@ -3002,6 +3026,26 @@ class dl:
 
                     is_track_kid = ["", "*"][kid == track_kid]
 
+                    cached_key = self.LICENSE_KEY_CACHE.get(kid)
+                    if cached_key:
+                        drm.content_keys[kid] = cached_key
+                        label = f"[text2]{kid.hex}:{cached_key}{is_track_kid} from cache"
+                        if not any(f"{kid.hex}:{cached_key}" in x.label for x in cek_tree.children):
+                            cek_tree.add(label)
+                        if self.debug_logger:
+                            self.debug_logger.log(
+                                level="INFO",
+                                operation="license_cache_hit",
+                                service=self.service,
+                                context={
+                                    "kid": kid.hex,
+                                    "content_key": cached_key,
+                                    "track": str(track),
+                                    "drm_type": "PlayReady",
+                                },
+                            )
+                        continue
+
                     if not cdm_only:
                         content_key, vault_used = self.vaults.get_key(kid)
                         if content_key:
@@ -3010,6 +3054,7 @@ class dl:
                             if not any(f"{kid.hex}:{content_key}" in x.label for x in cek_tree.children):
                                 cek_tree.add(label)
                             self.vaults.add_key(kid, content_key, excluding=vault_used)
+                            self.LICENSE_KEY_CACHE[kid] = content_key
 
                             if self.debug_logger:
                                 self.debug_logger.log_vault_query(
@@ -3083,6 +3128,8 @@ class dl:
                             cek_tree.add(label)
 
                     drm.content_keys.update(from_vaults)
+
+                    self.LICENSE_KEY_CACHE.update(drm.content_keys)
 
                     successful_caches = self.vaults.add_keys(drm.content_keys)
                     self.log.info(
