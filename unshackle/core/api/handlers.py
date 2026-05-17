@@ -58,7 +58,9 @@ DEFAULT_DOWNLOAD_PARAMS = {
     "skip_dl": False,
     "export": False,
     "cdm_only": None,
+    "proxy": None,
     "no_proxy": False,
+    "no_proxy_download": False,
     "no_folder": False,
     "no_source": False,
     "no_mux": False,
@@ -67,7 +69,11 @@ DEFAULT_DOWNLOAD_PARAMS = {
     "worst": False,
     "best_available": False,
     "repack": False,
+    "tag": None,
+    "tmdb_id": None,
     "imdb_id": None,
+    "animeapi_id": None,
+    "enrich": False,
     "output_dir": None,
     "no_cache": False,
     "reset_cache": False,
@@ -1026,7 +1032,7 @@ def validate_download_parameters(data: Dict[str, Any]) -> Optional[str]:
         return "Cannot use both s_lang and require_subs"
 
     if "range" in data and data["range"]:
-        valid_ranges = ["SDR", "HDR10", "HDR10+", "DV", "HLG"]
+        valid_ranges = ["SDR", "HDR10", "HDR10+", "DV", "HLG", "HYBRID"]
         if isinstance(data["range"], list):
             for r in data["range"]:
                 if r.upper() not in valid_ranges:
@@ -1097,8 +1103,17 @@ async def download_handler(data: Dict[str, Any], request: Optional[web.Request] 
 
         # Create download job with filtered parameters (exclude service and title_id as they're already passed)
         filtered_params = {k: v for k, v in data.items() if k not in ["service", "title_id"]}
-        # Merge defaults with provided parameters (user params override service defaults, which override global defaults)
-        params_with_defaults = {**DEFAULT_DOWNLOAD_PARAMS, **service_specific_defaults, **filtered_params}
+        # Overlay any dl-relevant keys from `serve:` config (e.g. downloads, workers) so the API
+        # respects server-side defaults without each client having to send them.
+        serve_overrides = {
+            k: v for k, v in (config.serve or {}).items() if k in DEFAULT_DOWNLOAD_PARAMS and v is not None
+        }
+        params_with_defaults = {
+            **DEFAULT_DOWNLOAD_PARAMS,
+            **serve_overrides,
+            **service_specific_defaults,
+            **filtered_params,
+        }
         job = manager.create_job(normalized_service, title_id, **params_with_defaults)
 
         return web.json_response(

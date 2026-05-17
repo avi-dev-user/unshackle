@@ -77,6 +77,22 @@ There is no separate "tier" flag. Whether the server can return KID:KEY for a se
 
 Per-service CDM type can be pinned via `config.cdm` (`widevine`/`playready`) or per-service `cdm_type`; otherwise the server picks the type the user has devices for.
 
+### Server-side `dl` defaults
+
+Any flag accepted by `/api/download` (see the table below) can be declared under `serve:` in `unshackle.yaml` and the API will apply it as a default. Request-body values still win. Useful for raising concurrency without changing every client call:
+
+```yaml
+serve:
+  api_secret: "..."
+  users: { ... }
+  downloads: 4        # parallel tracks per download job
+  workers: 16         # threads per track segment fetch
+  best_available: true
+  no_proxy_download: false
+```
+
+Layering order: built-in defaults < `serve.*` overrides < service-specific click defaults < request body.
+
 ---
 
 ## Endpoint Map
@@ -300,10 +316,12 @@ Start a download job. Returns immediately with a job ID (HTTP 202). Disabled in 
 | `profile` | string | `null` | Profile for credentials/cookies |
 | `proxy` | string | `null` | Proxy URI or country code |
 | `no_proxy` | boolean | `false` | Disable all proxy use |
+| `no_proxy_download` | boolean | `false` | Bypass proxy for segment downloads only. Manifest, license, and auth still use proxy |
 | `workers` | int | `null` | Max threads per track download |
 | `downloads` | int | `1` | Concurrent track downloads |
-| `slow` | boolean | `false` | Add 60-120s delay between titles |
+| `slow` | boolean or string | `null` | Add randomized delay between titles. `true` = 60-120s, or `"MIN-MAX"` string (e.g., `"20-40"`). Min must be >= 20 |
 | `best_available` | boolean | `false` | Continue if requested quality unavailable |
+| `worst` | boolean | `false` | Select the lowest bitrate track within the specified quality. Requires `quality` |
 | `skip_dl` | boolean | `false` | Skip download, only get decryption keys |
 | `export` | boolean | `false` | Export manifest, track URLs, keys, and subtitles to JSON in the exports directory |
 | `cdm_only` | boolean | `null` | Only use CDM (`true`) or only vaults (`false`) |
@@ -758,6 +776,6 @@ queued -> cancelled
 downloading -> cancelled
 ```
 
-Jobs are retained for 24 hours after completion. The server supports up to 2 concurrent downloads by default.
+Jobs are retained for 24 hours after completion (override via top-level `download_job_retention_hours` in `unshackle.yaml`). The server runs up to 2 concurrent download jobs by default; override via top-level `max_concurrent_downloads`. This is independent of `serve.downloads`, which controls parallel tracks **within** a single job.
 
 Remote sessions are managed by `SessionStore` (`unshackle/core/api/session_store.py`); idle sessions and their `InputBridge` instances are cleaned up by a background loop started/stopped with the app lifecycle.

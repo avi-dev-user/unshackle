@@ -630,8 +630,10 @@ async def download(request: web.Request) -> web.Response:
                 type: boolean
                 description: Download audio description tracks (default - false)
               slow:
-                type: boolean
-                description: Add 60-120s delay between downloads (default - false)
+                oneOf:
+                  - type: boolean
+                  - type: string
+                description: Add randomized delay between downloads. `true` for default 60-120s, or `"MIN-MAX"` string (e.g., `"20-40"`). Min must be >= 20 (default - null)
               split_audio:
                 type: boolean
                 description: Create separate output files per audio codec instead of merging all audio (default - null)
@@ -650,6 +652,9 @@ async def download(request: web.Request) -> web.Response:
               no_proxy:
                 type: boolean
                 description: Force disable all proxy use (default - false)
+              no_proxy_download:
+                type: boolean
+                description: Bypass proxy for segment downloads only. Manifest, license, and auth still use proxy (default - false)
               tag:
                 type: string
                 description: Set the group tag to be used (default - None)
@@ -680,6 +685,9 @@ async def download(request: web.Request) -> web.Response:
               best_available:
                 type: boolean
                 description: Continue with best available if requested quality unavailable (default - false)
+              worst:
+                type: boolean
+                description: Select the lowest bitrate track within the specified quality. Requires `quality` (default - false)
               repack:
                 type: boolean
                 description: Add REPACK tag to the output filename (default - false)
