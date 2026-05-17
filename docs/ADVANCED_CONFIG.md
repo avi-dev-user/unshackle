@@ -46,6 +46,22 @@ unshackle serve --remote-only            # Only expose remote service session en
   - `username` - Internal logging name for the user (not visible to users)
   - `services` - Optional per-user service allowlist. Effective access is the intersection of global and per-user allowlists.
 
+#### Server-side `dl` defaults
+
+Any key accepted by `/api/download` (see `docs/API.md`) can also be declared directly under `serve:` and the REST API will treat it as a default. Per-request bodies still win. Use this to raise concurrency, force `best_available`, etc. without each client repeating the values:
+
+```yaml
+serve:
+  api_secret: "..."
+  users: { ... }
+  downloads: 4              # parallel tracks per job
+  workers: 16               # threads per track
+  best_available: true
+  no_proxy_download: false
+```
+
+Layering: built-in defaults < `serve.*` overrides < service-specific defaults < request body.
+
 For example,
 
 ```yaml
@@ -85,6 +101,26 @@ When the server is running, interactive API documentation is available at:
 - **Swagger UI**: `http://localhost:8786/api/docs/`
 
 See [API.md](API.md) for full REST API documentation with endpoints, parameters, and examples.
+
+---
+
+## max_concurrent_downloads (int)
+
+Maximum number of `/api/download` jobs the serve queue manager will execute in parallel. Each job runs the full `dl` pipeline (authenticate, fetch tracks, decrypt, mux) in its own worker subprocess. This is independent of `serve.downloads`, which controls parallel tracks **inside** a single job. Default: `2`.
+
+```yaml
+max_concurrent_downloads: 4
+```
+
+---
+
+## download_job_retention_hours (int)
+
+How long completed, failed, or cancelled download jobs remain queryable via `/api/download/jobs/{job_id}` before the periodic cleanup loop drops them. Default: `24`.
+
+```yaml
+download_job_retention_hours: 48
+```
 
 ---
 

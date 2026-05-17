@@ -150,6 +150,21 @@ def _perform_download(
     if params.get("export"):
         params["export"] = bool(params["export"])
 
+    # Normalize slow: accept string "MIN-MAX", list/tuple, or True (default 60-120)
+    slow_raw = params.get("slow")
+    if slow_raw is not None and not isinstance(slow_raw, tuple):
+        if isinstance(slow_raw, bool):
+            params["slow"] = (60, 120) if slow_raw else None
+        elif isinstance(slow_raw, list) and len(slow_raw) == 2:
+            params["slow"] = (int(slow_raw[0]), int(slow_raw[1]))
+        elif isinstance(slow_raw, str):
+            from unshackle.core.utils.click_types import SLOW_DELAY_RANGE
+
+            try:
+                params["slow"] = SLOW_DELAY_RANGE.convert(slow_raw, None, None)
+            except click.BadParameter as exc:
+                raise Exception(f"Invalid slow parameter: {exc}")
+
     # Convert wanted episode strings to internal "SxE" format
     # Accepts: "S01E01", "S01-S03", "s1e1", "1x1", or already-parsed format
     wanted_raw = params.get("wanted")
@@ -180,6 +195,7 @@ def _perform_download(
     ctx.params = {
         "proxy": params.get("proxy"),
         "no_proxy": params.get("no_proxy", False),
+        "no_proxy_download": params.get("no_proxy_download", False),
         "profile": params.get("profile"),
         "repack": params.get("repack", False),
         "tag": params.get("tag"),
@@ -318,6 +334,7 @@ def _perform_download(
                 export=params.get("export"),
                 cdm_only=params.get("cdm_only"),
                 no_proxy=params.get("no_proxy", False),
+                no_proxy_download=params.get("no_proxy_download", False),
                 no_folder=params.get("no_folder", False),
                 no_source=params.get("no_source", False),
                 no_mux=params.get("no_mux", False),
@@ -653,8 +670,11 @@ class DownloadQueueManager:
             if stdout.strip():
                 log.debug(f"Worker stdout for job {job.job_id}: {stdout.strip()}")
             if stderr.strip():
-                log.warning(f"Worker stderr for job {job.job_id}: {stderr.strip()}")
                 job.worker_stderr = stderr.strip()
+                if returncode != 0:
+                    log.warning(f"Worker stderr for job {job.job_id}: {stderr.strip()}")
+                else:
+                    log.debug(f"Worker stderr for job {job.job_id}: {stderr.strip()}")
 
             result_data: Optional[Dict[str, Any]] = None
             try:

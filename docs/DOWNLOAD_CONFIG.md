@@ -102,6 +102,7 @@ to a CLI option on the `dl` command. CLI arguments always take priority over con
 | `require_subs` | list | `[]` | Required subtitle languages (skip title if missing) |
 | `forced_subs` | bool | `false` | Include forced subtitle tracks |
 | `exact_lang` | bool | `false` | Exact language matching (no regional variants) |
+| `latest_episode` | bool | `false` | Download only the single most recent episode of a series |
 
 **Track selection:**
 
@@ -147,6 +148,7 @@ to a CLI option on the `dl` command. CLI arguments always take priority over con
 | `downloads` | int | `1` | Concurrent track downloads |
 | `workers` | int | `min(16, cpu_count + 4)` | Max threads per track download (segments / ranged parts) |
 | `slow` | bool or `MIN-MAX` | `false` | Randomized delay between titles. `true` uses 60-120s; pass `MIN-MAX` (e.g., `20-40`) for a custom range |
+| `no_proxy_download` | bool | `false` | Bypass proxy for segment downloads only. Manifest, license, and auth still use proxy |
 | `skip_dl` | bool | `false` | Skip download, only get decryption keys |
 | `cdm_only` | bool | `null` | Only use CDM (`true`) or only vaults (`false`) |
 
