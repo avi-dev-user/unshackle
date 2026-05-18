@@ -113,7 +113,20 @@ class Title:
                         aspect_ratio.append(1)
                     ratio = aspect_ratio[0] / aspect_ratio[1]
                     if ratio not in (16 / 9, 4 / 3, 9 / 16, 3 / 4):
+                        if abs(width - 3840) <= 50:
+                            width = 3840
+                        elif abs(width - 2560) <= 50:
+                            width = 2560
+                        elif abs(width - 1920) <= 50 or abs(width - 1620) <= 50:
+                            width = 1920
+                        elif abs(width - 1280) <= 50 or abs(width - 1080) <= 50:
+                            width = 1280
+
                         resolution = int(max(width, primary_video_track.height) * (9 / 16))
+
+                        track_height = primary_video_track.height
+                        if abs(resolution - track_height) <= 10 or track_height in (2160, 1440, 1080, 720, 480):
+                            resolution = track_height
             except Exception:
                 pass
 
