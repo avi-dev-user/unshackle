@@ -245,3 +245,6 @@ AGENTS.md
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Test fixtures with private/local content (services, IDs, credentials)
+tests/remote/e2e/fixtures/fixtures.yaml

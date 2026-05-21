@@ -91,6 +91,28 @@ dev = [
     "isort>=5.13.2,<8",
     "ruff>=0.3.7,<0.15",
 ]
+test = [
+    "pytest>=8.3.0,<9",
+    "pytest-asyncio>=0.24.0,<1",
+    "pytest-aiohttp>=1.0.5,<2",
+    "responses>=0.25.0,<1",
+    "PyYAML>=6.0.1,<7",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "unit: fast, mocked tests (default)",
+    "live: end-to-end tests against a running serve (opt-in via --live)",
+    "slow: tests that hit real services and may take >10s",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:click.*",
+    "ignore::DeprecationWarning:unshackle.core.services",
+    "ignore::DeprecationWarning:ast",
+]
+addopts = "-ra --strict-markers"
 
 [tool.hatch.build.targets.wheel]
 packages = ["unshackle"]
