@@ -646,7 +646,7 @@ async def list_titles_handler(data: Dict[str, Any], request: Optional[web.Reques
 
     except APIError:
         raise
-    except Exception as e:
+    except (Exception, SystemExit) as e:
         log.exception("Error listing titles")
         debug_mode = request.app.get("debug_api", False) if request else False
         return handle_api_exception(
@@ -736,7 +736,7 @@ async def list_tracks_handler(data: Dict[str, Any], request: Optional[web.Reques
                     else:
                         wanted = season_range.parse_tokens(wanted_param)
                     log.debug(f"Parsed wanted '{wanted_param}' into {len(wanted)} episodes: {wanted[:10]}...")
-                except Exception as e:
+                except (Exception, SystemExit) as e:
                     raise APIError(
                         APIErrorCode.INVALID_PARAMETERS,
                         f"Invalid wanted parameter: {e}",
@@ -800,7 +800,7 @@ async def list_tracks_handler(data: Dict[str, Any], request: Optional[web.Reques
                             failed_episodes.append(f"S{title.season}E{title.number:02d}")
                             log.debug(f"Episode {title.season}x{title.number} not available, skipping")
                             continue
-                        except Exception as e:
+                        except (Exception, SystemExit) as e:
                             # Handle other errors gracefully
                             failed_episodes.append(f"S{title.season}E{title.number:02d}")
                             log.debug(f"Error getting tracks for {title.season}x{title.number}: {e}")
@@ -845,7 +845,7 @@ async def list_tracks_handler(data: Dict[str, Any], request: Optional[web.Reques
 
     except APIError:
         raise
-    except Exception as e:
+    except (Exception, SystemExit) as e:
         log.exception("Error listing tracks")
         debug_mode = request.app.get("debug_api", False) if request else False
         return handle_api_exception(
@@ -1045,7 +1045,7 @@ async def download_handler(data: Dict[str, Any], request: Optional[web.Request] 
 
     except APIError:
         raise
-    except Exception as e:
+    except (Exception, SystemExit) as e:
         log.exception("Error creating download job")
         debug_mode = request.app.get("debug_api", False) if request else False
         return handle_api_exception(
@@ -1113,7 +1113,7 @@ async def list_download_jobs_handler(data: Dict[str, Any], request: Optional[web
 
     except APIError:
         raise
-    except Exception as e:
+    except (Exception, SystemExit) as e:
         log.exception("Error listing download jobs")
         debug_mode = request.app.get("debug_api", False) if request else False
         return handle_api_exception(
@@ -1142,7 +1142,7 @@ async def get_download_job_handler(job_id: str, request: Optional[web.Request] =
 
     except APIError:
         raise
-    except Exception as e:
+    except (Exception, SystemExit) as e:
         log.exception(f"Error getting download job {sanitize_log(job_id)}")
         debug_mode = request.app.get("debug_api", False) if request else False
         return handle_api_exception(
@@ -1179,7 +1179,7 @@ async def cancel_download_job_handler(job_id: str, request: Optional[web.Request
 
     except APIError:
         raise
-    except Exception as e:
+    except (Exception, SystemExit) as e:
         log.exception(f"Error cancelling download job {sanitize_log(job_id)}")
         debug_mode = request.app.get("debug_api", False) if request else False
         return handle_api_exception(
@@ -1232,7 +1232,7 @@ def _create_service_instance(
     from unshackle.core.tracks import Video
 
     service_config = load_service_yaml(normalized_service)
-    cdm = _resolve_server_cdm(normalized_service, profile, data.get("cdm_type"))
+    cdm = load_full_cdm(normalized_service, profile, data.get("cdm_type"))
 
     # Reconstruct enum track-selection params from client data so service code that reads
     # ctx.parent.params (Service.__init__ proxy/range/vcodec/best_available block) sees enums.
@@ -1395,7 +1395,7 @@ async def session_create_handler(data: Dict[str, Any], request: Optional[web.Req
                 await asyncio.to_thread(service_instance.authenticate, cookies, credential)
                 session.auth_status = AuthStatus.AUTHENTICATED
                 bridge.status = AuthStatus.AUTHENTICATED
-            except Exception as e:
+            except (Exception, SystemExit) as e:
                 log.exception("Auth failed for session %s", session_id)
                 session.auth_status = AuthStatus.FAILED
                 session.auth_error = str(e)
@@ -1414,7 +1414,7 @@ async def session_create_handler(data: Dict[str, Any], request: Optional[web.Req
 
     except APIError:
         raise
-    except Exception as e:
+    except (Exception, SystemExit) as e:
         log.exception("Error creating session")
         debug_mode = request.app.get("debug_api", False) if request else False
         return handle_api_exception(
@@ -1458,7 +1458,7 @@ async def session_titles_handler(session_id: str, request: Optional[web.Request]
             }
         )
 
-    except Exception as e:
+    except (Exception, SystemExit) as e:
         log.exception("Error getting titles")
         debug_mode = request.app.get("debug_api", False) if request else False
         return handle_api_exception(
@@ -1580,7 +1580,7 @@ async def session_tracks_handler(
             }
         )
 
-    except Exception as e:
+    except (Exception, SystemExit) as e:
         log.exception(f"Error getting tracks for title {sanitize_log(title_id)}")
         debug_mode = request.app.get("debug_api", False) if request else False
         return handle_api_exception(
@@ -1679,7 +1679,7 @@ async def session_segments_handler(
 
     except APIError:
         raise
-    except Exception as e:
+    except (Exception, SystemExit) as e:
         log.exception("Error resolving segments")
         debug_mode = request.app.get("debug_api", False) if request else False
         return handle_api_exception(
@@ -2018,7 +2018,7 @@ def _load_server_vaults(service_name: str) -> Any:
         if vault_type:
             try:
                 vaults.load(vault_type, **cfg)
-            except Exception as e:
+            except (Exception, SystemExit) as e:
                 log.warning(f"Could not load vault '{vault_type}': {e}")
     return vaults
 
@@ -2063,7 +2063,7 @@ def _cache_to_vaults(keys: Dict[str, str], service_name: str) -> None:
         cached = vaults.add_keys(key_map)
         if cached:
             log.info(f"Cached {cached} key(s) to {cached} server vault(s)")
-    except Exception as e:
+    except (Exception, SystemExit) as e:
         log.warning(f"Failed to cache keys to vaults: {e}")
 
 
@@ -2273,7 +2273,7 @@ async def session_license_handler(
                         actual_drm_type = track_drm_type
             except SystemExit:
                 log.warning(f"Service exited while resolving keys for track {tid[:12]}, skipping")
-            except Exception as e:
+            except (Exception, SystemExit) as e:
                 log.warning(f"Failed to resolve keys for track {tid[:12]}: {e}")
 
         response: Dict[str, Any] = {"keys": all_keys}
@@ -2329,7 +2329,7 @@ async def session_license_handler(
         raise
     except SystemExit:
         raise APIError(APIErrorCode.SERVICE_ERROR, "Service exited during license request")
-    except Exception as e:
+    except (Exception, SystemExit) as e:
         log.exception(f"Error proxying license for track {track_id}")
         debug_mode = request.app.get("debug_api", False) if request else False
         return handle_api_exception(
