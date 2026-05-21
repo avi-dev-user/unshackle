@@ -191,7 +191,10 @@ def _perform_download(
 
     ctx = click.Context(dl_command.cli)
     ctx.invoked_subcommand = service
-    ctx.obj = ContextData(config=service_config, cdm=None, proxy_providers=[], profile=params.get("profile"))
+    from unshackle.core.api.handlers import load_full_cdm
+
+    cdm = load_full_cdm(service, params.get("profile"), params.get("cdm_type"))
+    ctx.obj = ContextData(config=service_config, cdm=cdm, proxy_providers=[], profile=params.get("profile"))
     ctx.params = {
         "proxy": params.get("proxy"),
         "no_proxy": params.get("no_proxy", False),
