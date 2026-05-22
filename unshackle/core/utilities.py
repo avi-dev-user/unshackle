@@ -160,6 +160,18 @@ def is_exact_match(language: Union[str, Language], languages: Sequence[Union[str
     return closest_match(language, list(map(str, languages)))[1] <= LANGUAGE_EXACT_DISTANCE
 
 
+def find_missing_langs(
+    requested: Sequence[str],
+    available: Sequence[Union[str, Language, None]],
+    *,
+    exact: bool = False,
+) -> list[str]:
+    """Return requested language tokens with no match in available languages."""
+    match_func = is_exact_match if exact else is_close_match
+    skip = {"all", "best", "orig"}
+    return [tok for tok in requested if tok not in skip and not match_func(tok, available)]
+
+
 def get_boxes(data: bytes, box_type: bytes, as_bytes: bool = False) -> Box:  # type: ignore
     """
     Scan a byte array for a wanted MP4/ISOBMFF box, then parse and yield each find.
