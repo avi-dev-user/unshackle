@@ -56,8 +56,9 @@ from unshackle.core.tracks import Audio, Subtitle, Tracks, Video
 from unshackle.core.tracks.attachment import Attachment
 from unshackle.core.tracks.dv_fixup import apply_dv_fixup
 from unshackle.core.tracks.hybrid import Hybrid
-from unshackle.core.utilities import (find_font_with_fallbacks, get_debug_logger, get_system_fonts, init_debug_logger,
-                                      is_close_match, suggest_font_packages, time_elapsed_since)
+from unshackle.core.utilities import (find_font_with_fallbacks, find_missing_langs, get_debug_logger,
+                                      get_system_fonts, init_debug_logger, is_close_match, suggest_font_packages,
+                                      time_elapsed_since)
 from unshackle.core.utils import tags
 from unshackle.core.utils.click_types import (AUDIO_CODEC_LIST, LANGUAGE_RANGE, QUALITY_LIST, SEASON_RANGE,
                                               SLOW_DELAY_RANGE, ContextData, MultipleChoice, MultipleVideoCodecChoice,
@@ -1872,19 +1873,34 @@ class dl:
 
                         match_func = is_exact_match if exact_lang else is_close_match
 
-                        missing_langs = [
-                            lang_
-                            for lang_ in s_lang
-                            if not any(match_func(lang_, [sub.language]) for sub in title.tracks.subtitles)
-                        ]
+                        missing_langs = find_missing_langs(
+                            s_lang,
+                            [sub.language for sub in title.tracks.subtitles],
+                            exact=exact_lang,
+                        )
                         if missing_langs:
-                            self.log.error(", ".join(missing_langs) + " not found in tracks")
-                            sys.exit(1)
+                            missing_str = ", ".join(missing_langs)
+                            if best_available:
+                                remaining = [tok for tok in s_lang if tok not in missing_langs]
+                                if remaining:
+                                    self.log.warning(
+                                        f"{missing_str} not found in subtitle tracks, continuing with: {', '.join(remaining)}"
+                                    )
+                                    s_lang = remaining
+                                else:
+                                    self.log.warning(
+                                        f"{missing_str} not found in subtitle tracks, continuing without subtitles"
+                                    )
+                                    title.tracks.subtitles = []
+                            else:
+                                self.log.error(missing_str + " not found in tracks")
+                                sys.exit(1)
 
-                        title.tracks.select_subtitles(lambda x: match_func(x.language, s_lang))
-                        if not title.tracks.subtitles:
-                            self.log.error(f"There's no {s_lang} Subtitle Track...")
-                            sys.exit(1)
+                        if s_lang and title.tracks.subtitles:
+                            title.tracks.select_subtitles(lambda x: match_func(x.language, s_lang))
+                            if not title.tracks.subtitles and not best_available:
+                                self.log.error(f"There's no {s_lang} Subtitle Track...")
+                                sys.exit(1)
 
                     if not forced_subs:
                         title.tracks.select_subtitles(lambda x: not x.forced)
@@ -1940,6 +1956,30 @@ class dl:
                             else:
                                 if language not in processed_lang:
                                     processed_lang.append(language)
+
+                        if not any(tok in processed_lang for tok in ("best", "all")):
+                            missing_a_langs = find_missing_langs(
+                                processed_lang,
+                                [a.language for a in title.tracks.audio],
+                                exact=exact_lang,
+                            )
+                            if missing_a_langs:
+                                missing_str = ", ".join(missing_a_langs)
+                                if best_available:
+                                    remaining = [tok for tok in processed_lang if tok not in missing_a_langs]
+                                    if remaining:
+                                        self.log.warning(
+                                            f"{missing_str} not found in audio tracks, continuing with: {', '.join(remaining)}"
+                                        )
+                                        processed_lang = remaining
+                                    else:
+                                        self.log.error(
+                                            f"{missing_str} not found in audio tracks and no fallback available"
+                                        )
+                                        sys.exit(1)
+                                else:
+                                    self.log.error(missing_str + " not found in audio tracks")
+                                    sys.exit(1)
 
                         if "best" in processed_lang or "all" in processed_lang:
                             unique_languages = {track.language for track in title.tracks.audio}

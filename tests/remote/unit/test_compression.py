@@ -24,7 +24,6 @@ def _run(coro):
 
 
 def test_skips_when_client_does_not_accept_gzip() -> None:
-    payload = b"x" * 4096
     body_json = json.dumps({"data": "x" * 4096}).encode()
 
     async def handler(req):  # noqa: ARG001

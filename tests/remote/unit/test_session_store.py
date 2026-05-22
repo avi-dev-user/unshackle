@@ -105,7 +105,7 @@ async def test_get_session_store_returns_singleton() -> None:
 async def test_max_sessions_evicts_oldest(store: SessionStore, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(type(store), "_max_sessions", property(lambda _: 2))
 
-    a = await store.create("A", _FakeService(), session_id="a")
+    await store.create("A", _FakeService(), session_id="a")
     await asyncio.sleep(0.01)
     b = await store.create("B", _FakeService(), session_id="b")
     await asyncio.sleep(0.01)
