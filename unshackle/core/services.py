@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
@@ -8,6 +9,8 @@ import click
 from unshackle.core.config import config
 from unshackle.core.service import Service
 from unshackle.core.utilities import import_module_by_path
+
+log = logging.getLogger("services")
 
 _service_dirs = config.directories.services
 if not isinstance(_service_dirs, list):
@@ -18,9 +21,59 @@ _SERVICES = sorted(
     key=lambda x: x.parent.stem,
 )
 
-_MODULES = {path.parent.stem: getattr(import_module_by_path(path), path.parent.stem) for path in _SERVICES}
 
-_ALIASES = {tag: getattr(module, "ALIASES") for tag, module in _MODULES.items()}
+def load_service(path: Path) -> object:
+    """Load one Service module, returning its tag-named class.
+
+    Raises a concise, single-line error naming the Service and the real cause so
+    a broken Service never surfaces as a raw traceback pointing at the loader.
+    """
+    tag = path.parent.stem
+    try:
+        module = import_module_by_path(path)
+    except Exception as e:
+        raise RuntimeError(f"{tag}: failed to import — {type(e).__name__}: {e} ({path})") from e
+    try:
+        return getattr(module, tag)
+    except AttributeError as e:
+        raise RuntimeError(
+            f"{tag}: no class named '{tag}' found in {path} — the class name must match the directory name"
+        ) from e
+
+
+def load_services(paths: list[Path]) -> tuple[dict[str, object], list[str]]:
+    """Load every Service, returning the good ones plus a list of load errors.
+
+    Importing this module must never raise: it is imported by several commands,
+    and a failed import is not cached by Python, so raising here would re-run and
+    re-report for every command. Instead we collect failures and let the caller
+    surface them once, cleanly, at the point services are actually used.
+    """
+    modules: dict[str, object] = {}
+    errors: list[str] = []
+    for path in paths:
+        try:
+            modules[path.parent.stem] = load_service(path)
+        except Exception as e:
+            errors.append(str(e))
+    return modules, errors
+
+
+_MODULES, LOAD_ERRORS = load_services(_SERVICES)
+
+_ALIASES = {tag: getattr(module, "ALIASES", ()) for tag, module in _MODULES.items()}
+
+
+def check_load_errors() -> None:
+    """Raise a single clean error if any Service failed to load.
+
+    Called when services are actually needed (listing/resolving) so the message
+    is rendered once by Click, without a traceback and without cascading through
+    every command that imports this module.
+    """
+    if LOAD_ERRORS:
+        joined = "\n".join(f"  - {err}" for err in LOAD_ERRORS)
+        raise click.ClickException(f"Failed to load {len(LOAD_ERRORS)} service(s):\n{joined}")
 
 
 class Services(click.MultiCommand):
@@ -64,10 +117,12 @@ class Services(click.MultiCommand):
                     if remote_tag not in tags:
                         tags.append(remote_tag)
             return tags
+        check_load_errors()
         return Services.get_tags()
 
     def get_command(self, ctx: click.Context, name: str) -> click.Command:
         """Load the Service and return the Click CLI method."""
+        check_load_errors()
         tag = Services.get_tag(name)
 
         import_file = ctx.params.get("import_file") or (ctx.parent and ctx.parent.params.get("import_file"))
