@@ -325,6 +325,20 @@ class Tracks:
         new_tracks.attachments = list(self.attachments)
         return new_tracks
 
+    @staticmethod
+    def merge_video_selections(*groups: list[Video]) -> list[Video]:
+        """Concatenate video selections, dropping duplicates (by track id, order-preserving).
+
+        A DV track can be chosen as both the hybrid ingredient (lowest) and an explicit
+        deliverable; without dedup the same track would be muxed/downloaded twice.
+        """
+        merged: list[Video] = []
+        for group in groups:
+            for video in group:
+                if video not in merged:
+                    merged.append(video)
+        return merged
+
     def select_hybrid(self, tracks, quality, worst: bool = False):
         # Prefer HDR10+ over HDR10 as the base layer (preserves dynamic metadata)
         base_ranges = (Video.Range.HDR10P, Video.Range.HDR10)
