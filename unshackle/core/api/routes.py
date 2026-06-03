@@ -221,6 +221,37 @@ async def services(request: web.Request) -> web.Response:
                 if service_module.__doc__:
                     service_data["help"] = service_module.__doc__.strip()
 
+                # Capability flags, derived from which Service hooks the service overrides.
+                from unshackle.core.service import Service as _BaseService
+
+                service_data["needs_auth"] = (
+                    getattr(service_module, "authenticate", None) is not _BaseService.authenticate
+                )
+                service_data["has_search"] = getattr(service_module, "search", None) is not _BaseService.search
+                service_data["has_drm"] = (
+                    getattr(service_module, "get_widevine_license", None) is not _BaseService.get_widevine_license
+                    or getattr(service_module, "get_playready_license", None) is not _BaseService.get_playready_license
+                )
+
+                # Auth methods the service accepts, inferred from what authenticate() references.
+                methods = []
+                if service_data["needs_auth"]:
+                    try:
+                        import inspect as _inspect
+
+                        src_lines = _inspect.getsource(service_module.authenticate).splitlines()
+                        start = next((i + 1 for i, ln in enumerate(src_lines) if ln.rstrip().endswith(":")), 1)
+                        body = "\n".join(src_lines[start:])
+                        if "cookies" in body:
+                            methods.append("cookies")
+                        if "credential" in body:
+                            methods.append("credentials")
+                    except (OSError, TypeError):
+                        pass
+                    if not methods:
+                        methods = ["cookies"]
+                service_data["auth_methods"] = methods
+
             except Exception as e:
                 log.warning(f"Could not load details for service {tag}: {e}")
 
