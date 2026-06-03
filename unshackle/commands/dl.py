@@ -3455,7 +3455,9 @@ class dl:
         Now supports quality-based selection when quality is provided.
         Raises a ValueError if there's a problem getting a CDM.
         """
-        cdm_name = config.cdm.get(service) or config.cdm.get("default")
+        # A per-request override (set by the REST API per job) takes precedence over the
+        # global config, so a job can select a specific CDM device without mutating shared state.
+        cdm_name = getattr(self, "cdm_override", None) or config.cdm.get(service) or config.cdm.get("default")
         if not cdm_name:
             return None
 
