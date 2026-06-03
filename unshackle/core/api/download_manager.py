@@ -232,6 +232,14 @@ def _perform_download(
     if params.get("cdm"):
         dl_instance.cdm_override = params["cdm"]
 
+    # Per-request credential ("user:pass"); feed it into the map get_credentials() reads so a
+    # client can authenticate without anything being persisted to disk.
+    if params.get("credential") and params.get("profile"):
+        svc_creds = config.credentials.get(service)
+        if not isinstance(svc_creds, dict):
+            config.credentials[service] = svc_creds = {}
+        svc_creds[params["profile"]] = params["credential"]
+
     service_module = Services.load(service)
 
     _check_cancel("before service instantiation")
