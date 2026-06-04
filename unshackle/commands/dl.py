@@ -42,7 +42,7 @@ from unshackle.core.cdm import DecryptLabsRemoteCDM
 from unshackle.core.cdm.detect import is_playready_cdm, is_widevine_cdm
 from unshackle.core.config import config
 from unshackle.core.console import console
-from unshackle.core.constants import DOWNLOAD_LICENCE_ONLY, AnyTrack, context_settings
+from unshackle.core.constants import DOWNLOAD_CANCELLED, DOWNLOAD_LICENCE_ONLY, AnyTrack, context_settings
 from unshackle.core.credential import Credential
 from unshackle.core.drm import DRM_T, MonaLisa, PlayReady, Widevine
 from unshackle.core.events import events
@@ -68,6 +68,41 @@ from unshackle.core.utils.collections import merge_dict
 from unshackle.core.utils.selector import select_multiple
 from unshackle.core.utils.subprocess import ffprobe
 from unshackle.core.vaults import Vaults
+
+
+def download_tracks_in_passes(tracks, max_concurrent, run_one, *, skip_subtitle_errors, on_subtitle_skipped):
+    """Download a title's tracks, keeping a skippable subtitle failure from corrupting the rest.
+
+    A failed track sets the process-global ``DOWNLOAD_CANCELLED`` event, which makes other
+    in-flight tracks early-return without raising — so catching a subtitle failure after the fact
+    can leave a half-downloaded video/audio that still gets muxed. When ``skip_subtitle_errors``
+    is set the fatal tracks (video/audio) are therefore downloaded concurrently first, and the
+    skippable subtitles run in a separate sequential pass once nothing else is in flight, with the
+    event reset before each so one failure can't poison the next. Video/Audio failures stay fatal.
+    The event is also reset up front so a cancel from a previous title can't carry over.
+
+    ``run_one(track, index)`` downloads a single track; ``on_subtitle_skipped(track)`` records a
+    subtitle whose download raised (the exception is handled here).
+    """
+    DOWNLOAD_CANCELLED.clear()
+    indexed = list(enumerate(tracks))
+    if skip_subtitle_errors:
+        primary = [(i, t) for i, t in indexed if not isinstance(t, Subtitle)]
+        skippable = [(i, t) for i, t in indexed if isinstance(t, Subtitle)]
+    else:
+        primary, skippable = indexed, []
+
+    with ThreadPoolExecutor(max_concurrent) as pool:
+        future_to_track = {pool.submit(run_one, track, i): track for i, track in primary}
+        for download in futures.as_completed(future_to_track):
+            download.result()  # a video/audio failure is fatal
+
+    for i, track in skippable:
+        DOWNLOAD_CANCELLED.clear()
+        try:
+            run_one(track, i)
+        except Exception:
+            on_subtitle_skipped(track)
 
 
 class dl:
@@ -474,6 +509,9 @@ class dl:
     @click.option("-S", "--subs-only", is_flag=True, default=False, help="Only download subtitle tracks.")
     @click.option("-C", "--chapters-only", is_flag=True, default=False, help="Only download chapter markers.")
     @click.option("-ns", "--no-subs", is_flag=True, default=False, help="Do not download subtitle tracks.")
+    @click.option("--skip-subtitle-errors", is_flag=True, default=False,
+                  help="If a subtitle track fails to download, skip it and continue instead of "
+                       "aborting the whole title (video/audio failures stay fatal).")
     @click.option("-na", "--no-audio", is_flag=True, default=False, help="Do not download audio tracks.")
     @click.option("-nc", "--no-chapters", is_flag=True, default=False, help="Do not download chapter markers.")
     @click.option("-nv", "--no-video", is_flag=True, default=False, help="Do not download video tracks.")
@@ -609,6 +647,9 @@ class dl:
 
         self.log = logging.getLogger("download")
         self.completed_files: list[Path] = []
+        # Subtitles skipped under --skip-subtitle-errors, recorded so an embedding caller can
+        # report which weren't available without parsing the console output.
+        self.skipped_subtitles: list[str] = []
 
         if not config.output_template:
             raise click.ClickException(
@@ -1051,6 +1092,7 @@ class dl:
         subs_only: bool,
         chapters_only: bool,
         no_subs: bool,
+        skip_subtitle_errors: bool,
         no_audio: bool,
         no_chapters: bool,
         no_video: bool,
@@ -2205,41 +2247,52 @@ class dl:
 
             try:
                 with Live(Padding(download_table, (1, 5)), console=console, refresh_per_second=5):
-                    with ThreadPoolExecutor(downloads) as pool:
-                        for download in futures.as_completed(
-                            (
-                                pool.submit(
-                                    track.download,
-                                    session=track.session or service.session,
-                                    no_proxy_download=no_proxy_download,
-                                    prepare_drm=partial(
-                                        partial(self.prepare_drm, table=download_table),
-                                        track=track,
-                                        title=title,
-                                        certificate=partial(
-                                            service.get_widevine_service_certificate,
-                                            title=title,
-                                            track=track,
-                                        ),
-                                        licence=partial(
-                                            service.get_playready_license
-                                            if is_playready_cdm(self.cdm)
-                                            else service.get_widevine_license,
-                                            title=title,
-                                            track=track,
-                                        ),
-                                        cdm_only=cdm_only,
-                                        vaults_only=vaults_only,
-                                        export=export_path,
-                                    ),
-                                    cdm=self.cdm,
-                                    max_workers=workers,
-                                    progress=tracks_progress_callables[i],
-                                )
-                                for i, track in enumerate(title.tracks)
-                            )
-                        ):
-                            download.result()
+
+                    def download_track(track, i):
+                        track.download(
+                            session=track.session or service.session,
+                            no_proxy_download=no_proxy_download,
+                            prepare_drm=partial(
+                                partial(self.prepare_drm, table=download_table),
+                                track=track,
+                                title=title,
+                                certificate=partial(
+                                    service.get_widevine_service_certificate,
+                                    title=title,
+                                    track=track,
+                                ),
+                                licence=partial(
+                                    service.get_playready_license
+                                    if is_playready_cdm(self.cdm)
+                                    else service.get_widevine_license,
+                                    title=title,
+                                    track=track,
+                                ),
+                                cdm_only=cdm_only,
+                                vaults_only=vaults_only,
+                                export=export_path,
+                            ),
+                            cdm=self.cdm,
+                            max_workers=workers,
+                            progress=tracks_progress_callables[i],
+                        )
+
+                    def on_subtitle_skipped(track):
+                        lang = str(getattr(track, "language", "") or "")
+                        self.log.warning(f"Subtitle {lang} failed to download, skipping it.")
+                        self.skipped_subtitles.append(lang)
+                        try:
+                            title.tracks.subtitles.remove(track)
+                        except (ValueError, AttributeError):
+                            pass
+
+                    download_tracks_in_passes(
+                        title.tracks,
+                        downloads,
+                        download_track,
+                        skip_subtitle_errors=skip_subtitle_errors,
+                        on_subtitle_skipped=on_subtitle_skipped,
+                    )
 
             except KeyboardInterrupt:
                 console.print(Padding(":x: Download Cancelled...", (0, 5, 1, 5)))
