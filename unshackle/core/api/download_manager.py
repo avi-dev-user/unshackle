@@ -22,6 +22,28 @@ def _sanitize_log(value: object) -> str:
     return str(value).replace("\n", "").replace("\r", "").replace("\x00", "")
 
 
+# Job parameters may carry secrets (a raw "user:pass" credential, a proxy URL with embedded
+# userinfo). These must never leave the process via the API or logs, so they are masked
+# wherever parameters are serialized for a response.
+_REDACTED = "***"
+_SENSITIVE_PARAM_KEYS = ("credential", "credentials", "password", "token", "api_key")
+_PROXY_USERINFO_RE = re.compile(r"(?<=://)[^/@]+@")
+
+
+def _redact_parameters(parameters: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a copy of job parameters with secrets masked, safe to serialize."""
+    if not isinstance(parameters, dict):
+        return parameters
+    redacted = dict(parameters)
+    for key in _SENSITIVE_PARAM_KEYS:
+        if redacted.get(key):
+            redacted[key] = _REDACTED
+    proxy = redacted.get("proxy")
+    if isinstance(proxy, str) and "@" in proxy:
+        redacted["proxy"] = _PROXY_USERINFO_RE.sub(f"{_REDACTED}@", proxy)
+    return redacted
+
+
 class JobStatus(Enum):
     QUEUED = "queued"
     DOWNLOADING = "downloading"
@@ -75,7 +97,7 @@ class DownloadJob:
         if include_full_details:
             result.update(
                 {
-                    "parameters": self.parameters,
+                    "parameters": _redact_parameters(self.parameters),
                     "started_time": self.started_time.isoformat() if self.started_time else None,
                     "completed_time": self.completed_time.isoformat() if self.completed_time else None,
                     "output_files": self.output_files,
@@ -325,12 +347,7 @@ def _perform_download(
                             counts["completed"] = tee_kwargs["completed"]
                         if "advance" in tee_kwargs:
                             counts["completed"] += tee_kwargs["advance"]
-                        if counts["total"]:
-                            pct = counts["completed"] * 100.0 / counts["total"]
-                        elif counts["completed"] <= 100:  # n_m3u8dl reports a direct percent
-                            pct = counts["completed"]
-                        else:
-                            pct = 0
+                        pct = counts["completed"] * 100.0 / counts["total"] if counts["total"] else 0
                         if pct:
                             progress_callback(
                                 {"progress": min(99.0, float(pct)), "phase": phase, "status": "downloading"}
@@ -431,14 +448,18 @@ def _perform_download(
         log.error(f"Stderr: {stderr_str}")
         raise
 
-    # dl.result() catches a download-worker exception, prints "Download Failed", but returns
-    # normally (exit 0). Detect that swallowed failure so the job isn't reported as completed
+    # dl.result() catches a download-worker exception, reports it, but returns normally
+    # (exit 0). It sets `download_failed` in that case, so the job isn't reported as completed
     # with no output.
-    captured = stdout_capture.getvalue() + stderr_capture.getvalue()
-    if "An unexpected error occurred in one of the download" in captured or "Download Failed" in captured:
-        marker = captured.find("Download Error")
-        detail = (captured[marker:marker + 200] if marker >= 0 else captured[-200:]).strip()
+    if getattr(dl_instance, "download_failed", False):
+        detail = (stdout_capture.getvalue() + stderr_capture.getvalue())[-200:].strip()
         raise Exception("download worker failed: " + (detail or "see logs"))
+
+    # Surface any subtitles that were skipped (non-fatal failures) so the client can report them.
+    if progress_callback:
+        skipped_subs = getattr(dl_instance, "skipped_subtitles", None)
+        if skipped_subs:
+            progress_callback({"skipped_subtitles": list(skipped_subs)})
 
     output_files = [str(p) for p in dl_instance.completed_files]
     log.info(f"Download completed for job {job_id}, {len(output_files)} file(s) in {original_download_dir}")
