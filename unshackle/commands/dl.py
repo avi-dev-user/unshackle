@@ -74,7 +74,7 @@ def download_tracks_in_passes(tracks, max_concurrent, run_one, *, skip_subtitle_
     """Download a title's tracks, keeping a skippable subtitle failure from corrupting the rest.
 
     A failed track sets the process-global ``DOWNLOAD_CANCELLED`` event, which makes other
-    in-flight tracks early-return without raising — so catching a subtitle failure after the fact
+    in-flight tracks early-return without raising - so catching a subtitle failure after the fact
     can leave a half-downloaded video/audio that still gets muxed. When ``skip_subtitle_errors``
     is set the fatal tracks (video/audio) are therefore downloaded concurrently first, and the
     skippable subtitles run in a separate sequential pass once nothing else is in flight, with the
