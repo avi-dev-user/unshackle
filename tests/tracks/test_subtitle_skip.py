@@ -1,4 +1,4 @@
-"""Tests for ``download_tracks_in_passes`` — the two-pass track download used by
+"""Tests for ``download_tracks_in_passes`` - the two-pass track download used by
 ``dl.result()`` when ``--skip-subtitle-errors`` is set.
 
 The behaviour under test is the cancel-event interaction: a failed track sets the
@@ -54,7 +54,7 @@ class Harness:
 
     ``run_one`` mirrors ``Track.download``: it early-returns (without recording a
     completion) when the cancel event is already set, and a track flagged to fail
-    sets the event and raises — exactly what the real cancel sites do.
+    sets the event and raises - exactly what the real cancel sites do.
     """
 
     def __init__(self, fail_ids: set[str]):
