@@ -235,7 +235,7 @@ async def services(request: web.Request) -> web.Response:
 
                 # Auth methods the service accepts. Prefer an explicit `AUTH_METHODS` class var
                 # (reliable); otherwise fall back to inferring from what authenticate() references
-                # — that mostly returns both because services call super().authenticate(...).
+                # - that mostly returns both because services call super().authenticate(...).
                 methods = []
                 if service_data["needs_auth"]:
                     declared = getattr(service_module, "AUTH_METHODS", None)
