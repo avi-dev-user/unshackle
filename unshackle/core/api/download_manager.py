@@ -44,6 +44,38 @@ def _redact_parameters(parameters: Dict[str, Any]) -> Dict[str, Any]:
     return redacted
 
 
+def _secret_values(parameters: Dict[str, Any]) -> List[str]:
+    """Raw secret strings carried in job parameters, longest first, for scrubbing free text."""
+    if not isinstance(parameters, dict):
+        return []
+    secrets: List[str] = []
+    for key in ("credential", "password", "token", "api_key"):
+        value = parameters.get(key)
+        if isinstance(value, str) and value:
+            secrets.append(value)
+            if key == "credential" and ":" in value:
+                password = value.split(":", 1)[1]
+                if len(password) >= 4:  # short passwords would blanket-replace and garble the text
+                    secrets.append(password)
+    creds = parameters.get("credentials")
+    if isinstance(creds, dict):
+        secrets.extend(v for v in creds.values() if isinstance(v, str) and v)
+    elif isinstance(creds, str) and creds:
+        secrets.append(creds)
+    return sorted(set(secrets), key=len, reverse=True)  # longest first so substrings don't survive
+
+
+def _redact_text(text: Optional[str], parameters: Dict[str, Any]) -> Optional[str]:
+    """Mask proxy userinfo and any known parameter secrets that leaked into a free-text field
+    (error message / details / traceback / worker stderr) before it is returned via the API."""
+    if not isinstance(text, str) or not text:
+        return text
+    text = _PROXY_USERINFO_RE.sub(f"{_REDACTED}@", text)
+    for secret in _secret_values(parameters):
+        text = text.replace(secret, _REDACTED)
+    return text
+
+
 class JobStatus(Enum):
     QUEUED = "queued"
     DOWNLOADING = "downloading"
@@ -95,17 +127,19 @@ class DownloadJob:
         }
 
         if include_full_details:
+            # Error/stderr/traceback are free text a service may have echoed a credential or proxy
+            # URL into, so scrub them with the same secrets that _redact_parameters masks.
             result.update(
                 {
                     "parameters": _redact_parameters(self.parameters),
                     "started_time": self.started_time.isoformat() if self.started_time else None,
                     "completed_time": self.completed_time.isoformat() if self.completed_time else None,
                     "output_files": self.output_files,
-                    "error_message": self.error_message,
-                    "error_details": self.error_details,
+                    "error_message": _redact_text(self.error_message, self.parameters),
+                    "error_details": _redact_text(self.error_details, self.parameters),
                     "error_code": self.error_code,
-                    "error_traceback": self.error_traceback,
-                    "worker_stderr": self.worker_stderr,
+                    "error_traceback": _redact_text(self.error_traceback, self.parameters),
+                    "worker_stderr": _redact_text(self.worker_stderr, self.parameters),
                 }
             )
 
@@ -143,6 +177,16 @@ def _perform_download(
     from unshackle.core.utils.collections import merge_dict
 
     log.info(f"Starting sync download for job {job_id}")
+
+    # A service caches tokens under cache/<Service>/, keyed by service name only, so two jobs on
+    # one service with different credentials would share a cache. When a per-job credential is set,
+    # namespace the cache dir by a hash of it so the sessions can't cross.
+    job_credential = params.get("credential")
+    if job_credential:
+        import hashlib
+
+        cred_hash = hashlib.sha256(job_credential.encode("utf-8")).hexdigest()[:12]
+        config.directories.cache = config.directories.cache / "_jobs" / cred_hash
 
     # Convert string parameters to enums (API receives strings, dl.result() expects enums)
     vcodec_raw = params.get("vcodec")
@@ -255,12 +299,14 @@ def _perform_download(
         dl_instance.cdm_override = params["cdm"]
 
     # Per-request credential ("user:pass"); feed it into the map get_credentials() reads so a
-    # client can authenticate without anything being persisted to disk.
-    if params.get("credential") and params.get("profile"):
+    # client can authenticate without anything being persisted to disk. Without a profile,
+    # get_credentials() falls back to "default", so store it there too rather than dropping it
+    # (which would silently authenticate as the server's own default account).
+    if params.get("credential"):
         svc_creds = config.credentials.get(service)
         if not isinstance(svc_creds, dict):
             config.credentials[service] = svc_creds = {}
-        svc_creds[params["profile"]] = params["credential"]
+        svc_creds[params.get("profile") or "default"] = params["credential"]
 
     service_module = Services.load(service)
 
@@ -448,9 +494,8 @@ def _perform_download(
         log.error(f"Stderr: {stderr_str}")
         raise
 
-    # dl.result() catches a download-worker exception, reports it, but returns normally
-    # (exit 0). It sets `download_failed` in that case, so the job isn't reported as completed
-    # with no output.
+    # dl.result() catches a download-worker exception, reports it, but returns normally (exit 0).
+    # It sets download_failed in that case, so the job isn't reported as completed with no output.
     if getattr(dl_instance, "download_failed", False):
         detail = (stdout_capture.getvalue() + stderr_capture.getvalue())[-200:].strip()
         raise Exception("download worker failed: " + (detail or "see logs"))
@@ -768,14 +813,18 @@ class DownloadQueueManager:
             stdout = stdout_bytes.decode("utf-8", errors="ignore")
             stderr = stderr_bytes.decode("utf-8", errors="ignore")
 
+            # A service can echo a credential or a proxy URL into its output, so scrub it before
+            # it reaches the log as well, not only the API response.
+            safe_stdout = _redact_text(stdout.strip(), job.parameters)
+            safe_stderr = _redact_text(stderr.strip(), job.parameters)
             if stdout.strip():
-                log.debug(f"Worker stdout for job {job.job_id}: {stdout.strip()}")
+                log.debug(f"Worker stdout for job {job.job_id}: {safe_stdout}")
             if stderr.strip():
                 job.worker_stderr = stderr.strip()
                 if returncode != 0:
-                    log.warning(f"Worker stderr for job {job.job_id}: {stderr.strip()}")
+                    log.warning(f"Worker stderr for job {job.job_id}: {safe_stderr}")
                 else:
-                    log.debug(f"Worker stderr for job {job.job_id}: {stderr.strip()}")
+                    log.debug(f"Worker stderr for job {job.job_id}: {safe_stderr}")
 
             result_data: Optional[Dict[str, Any]] = None
             try:
@@ -816,10 +865,6 @@ class DownloadQueueManager:
                     os.remove(path)
                 except OSError:
                     pass
-
-    def _execute_download_sync(self, job: DownloadJob) -> List[str]:
-        """Execute download synchronously using existing dl.py logic."""
-        return _perform_download(job.job_id, job.service, job.title_id, job.parameters.copy(), job.cancel_event)
 
     async def _cleanup_worker(self):
         """Worker that periodically cleans up old jobs."""
