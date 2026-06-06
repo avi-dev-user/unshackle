@@ -1021,6 +1021,16 @@ async def download_handler(data: Dict[str, Any], request: Optional[web.Request] 
                 details={"cdm": requested_cdm},
             )
 
+    # A per-request `credential` (or `credentials` map) authenticates the job with client-supplied
+    # secrets instead of the server-side credentials. Gate it behind `serve.allow_job_credentials`
+    # (default off) so a default deployment stays locked to its own credentials; mirrors the CDM gate.
+    if data.get("credential") or data.get("credentials"):
+        if not (config.serve or {}).get("allow_job_credentials"):
+            raise APIError(
+                APIErrorCode.FORBIDDEN,
+                "Per-request credentials are not permitted for API downloads.",
+            )
+
     try:
         # Load service module to extract service-specific parameter defaults
         service_module = Services.load(normalized_service)
