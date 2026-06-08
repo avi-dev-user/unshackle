@@ -673,6 +673,10 @@ class dl:
         # Subtitles skipped under --skip-subtitle-errors, recorded so an embedding caller can
         # report which weren't available without parsing the console output. See SkippedSubtitle.
         self.skipped_subtitles: list[SkippedSubtitle] = []
+        # result() catches a download-worker failure, reports it, and returns rather than
+        # re-raising (so the CLI still exits cleanly). Flag it so an embedding caller (the API
+        # worker) can tell the title did not complete instead of reading it as a success.
+        self.download_failed: bool = False
 
         if not config.output_template:
             raise click.ClickException(
@@ -2318,6 +2322,9 @@ class dl:
                     )
                 return
             except Exception as e:  # noqa
+                # Reported and swallowed (no re-raise) so the CLI exits cleanly; flag it so the
+                # API worker sees the title failed rather than completing with no output.
+                self.download_failed = True
                 error_messages = [
                     ":x: Download Failed...",
                     f"   {type(e).__name__}: {e}",
