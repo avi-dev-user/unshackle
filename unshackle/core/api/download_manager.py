@@ -111,6 +111,10 @@ class DownloadJob:
     # Human-readable current phase (e.g. "downloading video 1080p")
     phase: Optional[str] = None
 
+    # Subtitles skipped under skip_subtitle_errors (non-fatal). Each entry is a dl.SkippedSubtitle
+    # dict (id / language / title) so a client can report which weren't available.
+    skipped_subtitles: List[Dict[str, Any]] = field(default_factory=list)
+
     # Cancellation support
     cancel_event: threading.Event = field(default_factory=threading.Event)
 
@@ -124,6 +128,7 @@ class DownloadJob:
             "title_id": self.title_id,
             "progress": self.progress,
             "phase": self.phase,
+            "skipped_subtitles": self.skipped_subtitles,
         }
 
         if include_full_details:
@@ -455,6 +460,7 @@ def _perform_download(
                 subs_only=params.get("subs_only", False),
                 chapters_only=params.get("chapters_only", False),
                 no_subs=params.get("no_subs", False),
+                skip_subtitle_errors=params.get("skip_subtitle_errors", False),
                 no_audio=params.get("no_audio", False),
                 no_chapters=params.get("no_chapters", False),
                 no_video=params.get("no_video", False),
@@ -790,6 +796,8 @@ class DownloadQueueManager:
                             progress_data = json.load(handle)
                             if progress_data.get("phase") and progress_data["phase"] != job.phase:
                                 job.phase = progress_data["phase"]
+                            if progress_data.get("skipped_subtitles"):
+                                job.skipped_subtitles = progress_data["skipped_subtitles"]
                             if "progress" in progress_data:
                                 new_progress = float(progress_data["progress"])
                                 if new_progress != job.progress:
