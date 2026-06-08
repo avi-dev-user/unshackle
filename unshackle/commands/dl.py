@@ -20,7 +20,7 @@ from http.cookiejar import CookieJar, MozillaCookieJar
 from itertools import product
 from pathlib import Path
 from threading import Lock
-from typing import Any, Callable, Optional, TypedDict
+from typing import Any, Callable, Optional, TypedDict, Union
 from uuid import UUID
 
 import click
@@ -521,7 +521,7 @@ class dl:
         "--sub-format",
         type=SubtitleCodecChoice(Subtitle.Codec),
         default=None,
-        help="Set Output Subtitle Format, only converting if necessary.",
+        help="Set Output Subtitle Format, only converting if necessary. Use 'original' to keep source format.",
     )
     @click.option("-V", "--video-only", is_flag=True, default=False, help="Only download video tracks.")
     @click.option("-A", "--audio-only", is_flag=True, default=False, help="Only download audio tracks.")
@@ -1110,7 +1110,7 @@ class dl:
         require_subs: list[str],
         forced_subs: bool,
         exact_lang: bool,
-        sub_format: Optional[Subtitle.Codec],
+        sub_format: Optional[Union[Subtitle.Codec, str]],
         video_only: bool,
         audio_only: bool,
         subs_only: bool,
@@ -2369,6 +2369,8 @@ class dl:
 
                 with console.status("Converting Subtitles..."):
                     for subtitle in title.tracks.subtitles:
+                        if sub_format == "original":
+                            continue
                         if sub_format:
                             if subtitle.codec != sub_format:
                                 subtitle.convert(sub_format, forced=True)

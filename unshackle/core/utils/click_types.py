@@ -131,12 +131,17 @@ class SubtitleCodecChoice(click.Choice):
                 if value_lower not in choices:
                     choices.append(value_lower)
 
+        choices.append("original")
+
         self.aliases = aliases
         super().__init__(choices, case_sensitive=False)
 
     def convert(self, value: Any, param: Optional[click.Parameter] = None, ctx: Optional[click.Context] = None):
         if not value:
             return None
+
+        if str(value).lower() == "original":
+            return "original"
 
         # First try to convert using the parent class
         converted_value = super().convert(value, param, ctx)
