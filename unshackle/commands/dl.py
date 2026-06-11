@@ -2230,7 +2230,7 @@ class dl:
                         # still-in-flight track early-return without raising. For a skippable
                         # subtitle that would silently truncate the video/audio. So download the
                         # fatal tracks first, then the skippable subtitles in a separate pass once
-                        # nothing else is in flight — removing the shared-event race entirely.
+                        # nothing else is in flight, removing the shared-event race entirely.
                         primary = [(i, t) for i, t in indexed if not isinstance(t, Subtitle)]
                         skippable = [(i, t) for i, t in indexed if isinstance(t, Subtitle)]
                     else:
