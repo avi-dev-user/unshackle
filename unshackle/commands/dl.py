@@ -42,7 +42,7 @@ from unshackle.core.cdm import DecryptLabsRemoteCDM
 from unshackle.core.cdm.detect import is_playready_cdm, is_widevine_cdm
 from unshackle.core.config import config
 from unshackle.core.console import console
-from unshackle.core.constants import DOWNLOAD_LICENCE_ONLY, AnyTrack, context_settings
+from unshackle.core.constants import DOWNLOAD_CANCELLED, DOWNLOAD_LICENCE_ONLY, AnyTrack, context_settings
 from unshackle.core.credential import Credential
 from unshackle.core.drm import DRM_T, MonaLisa, PlayReady, Widevine
 from unshackle.core.events import events
@@ -612,6 +612,11 @@ class dl:
 
         self.log = logging.getLogger("download")
         self.completed_files: list[Path] = []
+        # State an API/embedding caller can read directly after result() instead of scraping
+        # the console output: subtitles skipped under --skip-subtitle-errors, and whether a
+        # download failure was caught and reported (result() returns rather than re-raising).
+        self.skipped_subtitles: list[str] = []
+        self.download_failed: bool = False
 
         if not config.output_template:
             raise click.ClickException(
@@ -2185,55 +2190,74 @@ class dl:
 
             try:
                 with Live(Padding(download_table, (1, 5)), console=console, refresh_per_second=5):
+                    # DOWNLOAD_CANCELLED is a process-global Event. Reset it at the start of each
+                    # title so a cancel/failure carried over from a previous title can't make this
+                    # title's tracks early-return and get muxed half-downloaded.
+                    DOWNLOAD_CANCELLED.clear()
+
+                    def download_track(track, i):
+                        track.download(
+                            session=track.session or service.session,
+                            no_proxy_download=no_proxy_download,
+                            prepare_drm=partial(
+                                partial(self.prepare_drm, table=download_table),
+                                track=track,
+                                title=title,
+                                certificate=partial(
+                                    service.get_widevine_service_certificate,
+                                    title=title,
+                                    track=track,
+                                ),
+                                licence=partial(
+                                    service.get_playready_license
+                                    if is_playready_cdm(self.cdm)
+                                    else service.get_widevine_license,
+                                    title=title,
+                                    track=track,
+                                ),
+                                cdm_only=cdm_only,
+                                vaults_only=vaults_only,
+                                export=export_path,
+                            ),
+                            cdm=self.cdm,
+                            max_workers=workers,
+                            progress=tracks_progress_callables[i],
+                        )
+
+                    indexed = list(enumerate(title.tracks))
+                    if skip_subtitle_errors:
+                        # A failed track sets the global DOWNLOAD_CANCELLED Event, which makes any
+                        # still-in-flight track early-return without raising. For a skippable
+                        # subtitle that would silently truncate the video/audio. So download the
+                        # fatal tracks first, then the skippable subtitles in a separate pass once
+                        # nothing else is in flight — removing the shared-event race entirely.
+                        primary = [(i, t) for i, t in indexed if not isinstance(t, Subtitle)]
+                        skippable = [(i, t) for i, t in indexed if isinstance(t, Subtitle)]
+                    else:
+                        primary, skippable = indexed, []
+
                     with ThreadPoolExecutor(downloads) as pool:
                         future_to_track = {
-                                pool.submit(
-                                    track.download,
-                                    session=track.session or service.session,
-                                    no_proxy_download=no_proxy_download,
-                                    prepare_drm=partial(
-                                        partial(self.prepare_drm, table=download_table),
-                                        track=track,
-                                        title=title,
-                                        certificate=partial(
-                                            service.get_widevine_service_certificate,
-                                            title=title,
-                                            track=track,
-                                        ),
-                                        licence=partial(
-                                            service.get_playready_license
-                                            if is_playready_cdm(self.cdm)
-                                            else service.get_widevine_license,
-                                            title=title,
-                                            track=track,
-                                        ),
-                                        cdm_only=cdm_only,
-                                        vaults_only=vaults_only,
-                                        export=export_path,
-                                    ),
-                                    cdm=self.cdm,
-                                    max_workers=workers,
-                                    progress=tracks_progress_callables[i],
-                                ): track
-                                for i, track in enumerate(title.tracks)
+                            pool.submit(download_track, track, i): track for i, track in primary
                         }
                         for download in futures.as_completed(future_to_track):
-                            track = future_to_track[download]
+                            download.result()  # a video/audio failure is fatal
+
+                    # Second pass: skippable subtitles, one at a time so a failure can't poison the
+                    # next via the shared cancel Event. A failure is logged and the track dropped
+                    # from the mux; clients learn which subtitles were unavailable from the log.
+                    for i, track in skippable:
+                        DOWNLOAD_CANCELLED.clear()
+                        try:
+                            download_track(track, i)
+                        except Exception:
+                            lang = str(getattr(track, "language", "") or "")
+                            self.log.warning(f"Subtitle {lang} failed to download, skipping it.")
+                            self.skipped_subtitles.append(lang)
                             try:
-                                download.result()
-                            except Exception:
-                                # With --skip-subtitle-errors a failed subtitle is non-fatal: skip
-                                # it and keep going so video/audio still deliver (logged for clients).
-                                if skip_subtitle_errors and isinstance(track, Subtitle):
-                                    self.log.warning(
-                                        "SUBTITLE_SKIPPED:%s" % (getattr(track, "language", "") or "")
-                                    )
-                                    try:
-                                        title.tracks.subtitles.remove(track)
-                                    except (ValueError, AttributeError):
-                                        pass
-                                else:
-                                    raise
+                                title.tracks.subtitles.remove(track)
+                            except (ValueError, AttributeError):
+                                pass
 
             except KeyboardInterrupt:
                 console.print(Padding(":x: Download Cancelled...", (0, 5, 1, 5)))
@@ -2247,6 +2271,9 @@ class dl:
                     )
                 return
             except Exception as e:  # noqa
+                # result() reports the failure and returns rather than re-raising; flag it so an
+                # embedding caller (e.g. the API worker) can tell this title did not complete.
+                self.download_failed = True
                 error_messages = [
                     ":x: Download Failed...",
                     f"   {type(e).__name__}: {e}",
