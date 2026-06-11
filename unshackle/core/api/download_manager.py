@@ -792,6 +792,20 @@ class DownloadQueueManager:
                         await asyncio.wait_for(communicate_task, timeout=5)
                     raise asyncio.CancelledError("Job was cancelled")
 
+            # The worker writes its final progress (terminal phase, and skipped_subtitles after the
+            # last track) just before exiting, often after the last 0.5s poll above. Read once more
+            # so that final state isn't lost to the exit race.
+            try:
+                if os.path.exists(progress_path):
+                    with open(progress_path, "r", encoding="utf-8") as handle:
+                        final_progress = json.load(handle)
+                    if final_progress.get("phase"):
+                        job.phase = final_progress["phase"]
+                    if final_progress.get("skipped_subtitles"):
+                        job.skipped_subtitles = final_progress["skipped_subtitles"]
+            except (FileNotFoundError, json.JSONDecodeError, ValueError):
+                pass
+
             returncode = process.returncode
             stdout = stdout_bytes.decode("utf-8", errors="ignore")
             stderr = stderr_bytes.decode("utf-8", errors="ignore")
