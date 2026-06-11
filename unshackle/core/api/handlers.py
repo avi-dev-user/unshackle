@@ -1278,15 +1278,21 @@ def _create_service_instance(
     service_module = Services.load(normalized_service)
     service_instance = instantiate_service(parent_ctx, service_module, title_id, data, SESSION_TRANSPORT_KEYS)
 
-    # Resolve credentials: client-sent > server-local
+    # Resolve credentials. A client-sent credential is gated behind serve.allow_job_credentials
+    # (default-deny): true permits any service, a list permits only those service tags. Unset/false
+    # ignores it and uses the server-local credential, so a server never forwards arbitrary client
+    # credentials to a service by default.
     cred_data = data.get("credentials")
-    if cred_data and isinstance(cred_data, dict):
-        credential = Credential(
-            username=cred_data["username"],
-            password=cred_data["password"],
-            extra=cred_data.get("extra"),
-        )
-    else:
+    credential = None
+    if isinstance(cred_data, dict) and cred_data.get("username") and cred_data.get("password"):
+        allowed = (config.serve or {}).get("allow_job_credentials")
+        if allowed is True or (isinstance(allowed, (list, tuple, set)) and normalized_service in allowed):
+            credential = Credential(
+                username=cred_data["username"],
+                password=cred_data["password"],
+                extra=cred_data.get("extra"),
+            )
+    if credential is None:
         credential = dl.get_credentials(normalized_service, profile)
 
     # Resolve cookies: client-sent > server-local
