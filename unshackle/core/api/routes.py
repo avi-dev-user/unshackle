@@ -221,6 +221,29 @@ async def services(request: web.Request) -> web.Response:
                 if service_module.__doc__:
                     service_data["help"] = service_module.__doc__.strip()
 
+                # Capability flags, derived from which Service hooks the service overrides.
+                from unshackle.core.service import Service as _BaseService
+
+                service_data["needs_auth"] = (
+                    getattr(service_module, "authenticate", None) is not _BaseService.authenticate
+                )
+                service_data["has_search"] = getattr(service_module, "search", None) is not _BaseService.search
+                service_data["has_drm"] = (
+                    getattr(service_module, "get_widevine_license", None) is not _BaseService.get_widevine_license
+                    or getattr(service_module, "get_playready_license", None) is not _BaseService.get_playready_license
+                )
+
+                # Auth methods the service accepts. An explicit `AUTH_METHODS` class var is honoured
+                # (also when auth is optional, e.g. a free service where cookies only unlock higher
+                # quality); otherwise an auth-requiring service defaults to both cookies and credentials.
+                declared = getattr(service_module, "AUTH_METHODS", None)
+                if declared:
+                    service_data["auth_methods"] = list(declared)
+                elif service_data["needs_auth"]:
+                    service_data["auth_methods"] = ["cookies", "credentials"]
+                else:
+                    service_data["auth_methods"] = []
+
             except Exception as e:
                 log.warning(f"Could not load details for service {tag}: {e}")
 
