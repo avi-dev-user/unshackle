@@ -57,6 +57,9 @@ class DownloadJob:
     # Human-readable current phase (e.g. "downloading video 1080p")
     phase: Optional[str] = None
 
+    # Subtitles that failed to download but were skipped (non-fatal)
+    skipped_subtitles: List[str] = field(default_factory=list)
+
     # Cancellation support
     cancel_event: threading.Event = field(default_factory=threading.Event)
 
@@ -70,6 +73,7 @@ class DownloadJob:
             "title_id": self.title_id,
             "progress": self.progress,
             "phase": self.phase,
+            "skipped_subtitles": self.skipped_subtitles,
         }
 
         if include_full_details:
@@ -440,6 +444,12 @@ def _perform_download(
         detail = (captured[marker:marker + 200] if marker >= 0 else captured[-200:]).strip()
         raise Exception("download worker failed: " + (detail or "see logs"))
 
+    # Surface any subtitles that were skipped (non-fatal failures) so the client can report them.
+    if progress_callback:
+        skipped_subs = re.findall(r"SUBTITLE_SKIPPED:(\S*)", captured)
+        if skipped_subs:
+            progress_callback({"skipped_subtitles": skipped_subs})
+
     output_files = [str(p) for p in dl_instance.completed_files]
     log.info(f"Download completed for job {job_id}, {len(output_files)} file(s) in {original_download_dir}")
 
@@ -724,6 +734,8 @@ class DownloadQueueManager:
                             progress_data = json.load(handle)
                             if progress_data.get("phase") and progress_data["phase"] != job.phase:
                                 job.phase = progress_data["phase"]
+                            if progress_data.get("skipped_subtitles"):
+                                job.skipped_subtitles = progress_data["skipped_subtitles"]
                             if "progress" in progress_data:
                                 new_progress = float(progress_data["progress"])
                                 if new_progress != job.progress:
