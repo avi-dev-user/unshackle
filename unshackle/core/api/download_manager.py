@@ -45,6 +45,13 @@ class DownloadJob:
     started_time: Optional[datetime] = None
     completed_time: Optional[datetime] = None
     progress: float = 0.0
+    # Human-readable current phase (e.g. "downloading video 1080p")
+    phase: Optional[str] = None
+    # Segment counts (HLS/DASH) so a client can show "197/663" instead of a bare percentage
+    segments_done: float = 0.0
+    segments_total: float = 0.0
+    # Live download speed as a human string (e.g. "3.2 MB/s")
+    speed: Optional[str] = None
 
     # Results and error info
     output_files: List[str] = field(default_factory=list)
@@ -66,6 +73,10 @@ class DownloadJob:
             "service": self.service,
             "title_id": self.title_id,
             "progress": self.progress,
+            "phase": self.phase,
+            "segments_done": self.segments_done,
+            "segments_total": self.segments_total,
+            "speed": self.speed,
         }
 
         if include_full_details:
@@ -276,7 +287,59 @@ def _perform_download(
         # Report initial progress
         progress_callback({"progress": 0.0, "status": "starting"})
 
-        # Simple approach: report progress at key points
+        # Tee each Track.download's progress callable so the downloader's live percentage is
+        # forwarded to the job (not just 5%/100%), along with the segment counts, transfer speed,
+        # and a human-readable phase for the track being downloaded now.
+        from unshackle.core.tracks.track import Track as _Track
+
+        if not getattr(_Track, "_api_progress_patched", False):
+            _orig_track_download = _Track.download
+
+            def _download_with_progress(self, *args, **kwargs):
+                inner_progress = kwargs.get("progress")
+                track_type = type(self).__name__
+                phase = {
+                    "Video": "downloading video",
+                    "Audio": "downloading audio",
+                    "Subtitle": "downloading subtitle",
+                }.get(track_type, f"downloading {track_type.lower()}")
+                height = getattr(self, "height", None)
+                language = getattr(self, "language", None)
+                if height:
+                    phase += f" {height}p"
+                elif track_type in ("Audio", "Subtitle") and language:
+                    phase += f" {language}"
+                progress_callback({"phase": phase, "status": "downloading"})
+
+                if callable(inner_progress):
+                    counts = {"completed": 0.0, "total": 0.0, "speed": None}
+
+                    def tee(*tee_args, **tee_kwargs):
+                        if tee_kwargs.get("total"):
+                            counts["total"] = tee_kwargs["total"]
+                        if tee_kwargs.get("completed") is not None:
+                            counts["completed"] = tee_kwargs["completed"]
+                        if "advance" in tee_kwargs:
+                            counts["completed"] += tee_kwargs["advance"]
+                        # the requests downloader reports live speed via downloaded="<size>/s"
+                        _dl = tee_kwargs.get("downloaded")
+                        if isinstance(_dl, str) and _dl.endswith("/s"):
+                            counts["speed"] = _dl
+                        pct = counts["completed"] * 100.0 / counts["total"] if counts["total"] else 0
+                        if pct:
+                            progress_callback(
+                                {"progress": min(99.0, float(pct)), "phase": phase, "status": "downloading",
+                                 "segments_done": counts["completed"], "segments_total": counts["total"],
+                                 "speed": counts["speed"]}
+                            )
+                        return inner_progress(*tee_args, **tee_kwargs)
+
+                    kwargs["progress"] = tee
+                return _orig_track_download(self, *args, **kwargs)
+
+            _Track.download = _download_with_progress
+            _Track._api_progress_patched = True
+
         original_result = dl_instance.result
 
         def result_with_progress(*args, **kwargs):
@@ -647,11 +710,21 @@ class DownloadQueueManager:
                     if os.path.exists(progress_path):
                         with open(progress_path, "r", encoding="utf-8") as handle:
                             progress_data = json.load(handle)
+                            if progress_data.get("phase") and progress_data["phase"] != job.phase:
+                                job.phase = progress_data["phase"]
                             if "progress" in progress_data:
                                 new_progress = float(progress_data["progress"])
                                 if new_progress != job.progress:
                                     job.progress = new_progress
                                     log.info(f"Job {job.job_id} progress updated: {job.progress}%")
+                            for _sk in ("segments_done", "segments_total"):
+                                if _sk in progress_data:
+                                    try:
+                                        setattr(job, _sk, float(progress_data[_sk]))
+                                    except (TypeError, ValueError):
+                                        pass
+                            if progress_data.get("speed"):
+                                job.speed = str(progress_data["speed"])
                 except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
                     log.debug(f"Could not read progress for job {job.job_id}: {e}")
 
@@ -665,6 +738,17 @@ class DownloadQueueManager:
                         process.kill()
                         await asyncio.wait_for(communicate_task, timeout=5)
                     raise asyncio.CancelledError("Job was cancelled")
+
+            # The worker writes its final phase just before exiting, often after the last 0.5s
+            # poll above, so read once more to avoid losing it to the exit race.
+            try:
+                if os.path.exists(progress_path):
+                    with open(progress_path, "r", encoding="utf-8") as handle:
+                        final_progress = json.load(handle)
+                    if final_progress.get("phase"):
+                        job.phase = final_progress["phase"]
+            except (FileNotFoundError, json.JSONDecodeError, ValueError):
+                pass
 
             returncode = process.returncode
             stdout = stdout_bytes.decode("utf-8", errors="ignore")
