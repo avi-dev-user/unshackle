@@ -70,6 +70,7 @@ class DownloadJob:
     # Segment counts (HLS/DASH) so a client can show "197/663" instead of a bare percentage
     segments_done: float = 0.0
     segments_total: float = 0.0
+    speed: Optional[str] = None   # live download speed as a human string (e.g. "3.2 MB/s")
 
     # Results and error info
     output_files: List[str] = field(default_factory=list)
@@ -99,6 +100,7 @@ class DownloadJob:
             "progress": self.progress,
             "segments_done": self.segments_done,
             "segments_total": self.segments_total,
+            "speed": self.speed,
             "phase": self.phase,
             "skipped_subtitles": self.skipped_subtitles,
         }
@@ -347,7 +349,7 @@ def _perform_download(
                 progress_callback({"phase": phase, "status": "downloading"})
 
                 if callable(inner_progress):
-                    counts = {"completed": 0.0, "total": 0.0}
+                    counts = {"completed": 0.0, "total": 0.0, "speed": None}
 
                     def tee(*tee_args, **tee_kwargs):
                         if tee_kwargs.get("total"):
@@ -356,11 +358,16 @@ def _perform_download(
                             counts["completed"] = tee_kwargs["completed"]
                         if "advance" in tee_kwargs:
                             counts["completed"] += tee_kwargs["advance"]
+                        # the requests downloader reports live speed via downloaded="<size>/s"
+                        _dl = tee_kwargs.get("downloaded")
+                        if isinstance(_dl, str) and _dl.endswith("/s"):
+                            counts["speed"] = _dl
                         pct = counts["completed"] * 100.0 / counts["total"] if counts["total"] else 0
                         if pct:
                             progress_callback(
                                 {"progress": min(99.0, float(pct)), "phase": phase, "status": "downloading",
-                                 "segments_done": counts["completed"], "segments_total": counts["total"]}
+                                 "segments_done": counts["completed"], "segments_total": counts["total"],
+                                 "speed": counts["speed"]}
                             )
                         return inner_progress(*tee_args, **tee_kwargs)
 
@@ -769,6 +776,8 @@ class DownloadQueueManager:
                                         setattr(job, _sk, float(progress_data[_sk]))
                                     except (TypeError, ValueError):
                                         pass
+                            if progress_data.get("speed"):
+                                job.speed = str(progress_data["speed"])
                 except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
                     log.debug(f"Could not read progress for job {job.job_id}: {e}")
 
