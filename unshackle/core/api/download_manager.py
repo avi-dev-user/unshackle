@@ -67,6 +67,9 @@ class DownloadJob:
     started_time: Optional[datetime] = None
     completed_time: Optional[datetime] = None
     progress: float = 0.0
+    # Segment counts (HLS/DASH) so a client can show "197/663" instead of a bare percentage
+    segments_done: float = 0.0
+    segments_total: float = 0.0
 
     # Results and error info
     output_files: List[str] = field(default_factory=list)
@@ -94,6 +97,8 @@ class DownloadJob:
             "service": self.service,
             "title_id": self.title_id,
             "progress": self.progress,
+            "segments_done": self.segments_done,
+            "segments_total": self.segments_total,
             "phase": self.phase,
             "skipped_subtitles": self.skipped_subtitles,
         }
@@ -354,7 +359,8 @@ def _perform_download(
                         pct = counts["completed"] * 100.0 / counts["total"] if counts["total"] else 0
                         if pct:
                             progress_callback(
-                                {"progress": min(99.0, float(pct)), "phase": phase, "status": "downloading"}
+                                {"progress": min(99.0, float(pct)), "phase": phase, "status": "downloading",
+                                 "segments_done": counts["completed"], "segments_total": counts["total"]}
                             )
                         return inner_progress(*tee_args, **tee_kwargs)
 
@@ -757,6 +763,12 @@ class DownloadQueueManager:
                                 if new_progress != job.progress:
                                     job.progress = new_progress
                                     log.info(f"Job {job.job_id} progress updated: {job.progress}%")
+                            for _sk in ("segments_done", "segments_total"):
+                                if _sk in progress_data:
+                                    try:
+                                        setattr(job, _sk, float(progress_data[_sk]))
+                                    except (TypeError, ValueError):
+                                        pass
                 except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
                     log.debug(f"Could not read progress for job {job.job_id}: {e}")
 
