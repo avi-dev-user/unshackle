@@ -1005,6 +1005,22 @@ async def download_handler(data: Dict[str, Any], request: Optional[web.Request] 
             details={"service": normalized_service, "title_id": title_id},
         )
 
+    # A per-request `cdm` selects a server-side device, so it is gated here rather than honoured
+    # blindly. `serve.cdm_overrides` opts in: a list permits only those device names, or `true`
+    # permits any (for a single trusted client). Unset/false rejects every override.
+    requested_cdm = data.get("cdm")
+    if requested_cdm:
+        allowed = (config.serve or {}).get("cdm_overrides")
+        permitted = allowed is True or (
+            isinstance(allowed, (list, tuple, set)) and requested_cdm in allowed
+        )
+        if not permitted:
+            raise APIError(
+                APIErrorCode.FORBIDDEN,
+                "The requested CDM is not permitted for API downloads.",
+                details={"cdm": requested_cdm},
+            )
+
     try:
         # Load service module to extract service-specific parameter defaults
         service_module = Services.load(normalized_service)
