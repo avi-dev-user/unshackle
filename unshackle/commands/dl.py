@@ -46,7 +46,7 @@ from unshackle.core.config import config
 from unshackle.core.console import console
 from unshackle.core.constants import DOWNLOAD_CANCELLED, DOWNLOAD_LICENCE_ONLY, AnyTrack, context_settings
 from unshackle.core.credential import Credential
-from unshackle.core.drm import DRM_T, MonaLisa, PlayReady, Widevine
+from unshackle.core.drm import DRM_T, ClearKeyCENC, MonaLisa, PlayReady, Widevine
 from unshackle.core.events import events
 from unshackle.core.proxies import Basic, Gluetun, Hola, NordVPN, SurfsharkVPN, WindscribeVPN
 from unshackle.core.service import Service
@@ -2320,6 +2320,11 @@ class dl:
                                     title=title,
                                     track=track,
                                 ),
+                                clearkey_licence=partial(
+                                    service.get_clearkey_license,
+                                    title=title,
+                                    track=track,
+                                ),
                                 cdm_only=cdm_only,
                                 vaults_only=vaults_only,
                                 export=export_path,
@@ -2328,7 +2333,7 @@ class dl:
                             max_workers=workers,
                             progress=tracks_progress_callables[i],
                         )
-                        # DRM-free and ClearKey tracks never reach prepare_drm, so export here.
+                        # DRM-free and HLS-ClearKey tracks never reach prepare_drm, so export here.
                         # drm=None on purpose: licensed tracks already recorded their DRM/keys
                         # in prepare_drm, and write_export merges via setdefault.
                         if export_path:
@@ -3004,6 +3009,7 @@ class dl:
         title: Title_T,
         certificate: Callable,
         licence: Callable,
+        clearkey_licence: Optional[Callable] = None,
         track_kid: Optional[UUID] = None,
         table: Table = None,
         cdm_only: bool = False,
@@ -3448,6 +3454,142 @@ class dl:
                     if not pre_existing_tree:
                         table.add_row(cek_tree)
                     raise PlayReady.Exceptions.CEKNotFound(msg)
+
+                if cek_tree.children and not pre_existing_tree:
+                    table.add_row()
+                    table.add_row(cek_tree)
+
+                if export:
+                    self.write_export(export, title, track, drm)
+
+        elif isinstance(drm, ClearKeyCENC):
+            with self.DRM_TABLE_LOCK:
+                cek_tree = Tree(Text.assemble(("ClearKey", "cyan"), overflow="fold"))
+                pre_existing_tree = next(
+                    (x for x in table.columns[0].cells if isinstance(x, Tree) and x.label == cek_tree.label), None
+                )
+                if pre_existing_tree:
+                    cek_tree = pre_existing_tree
+
+                need_license = False
+                all_kids = list(drm.kids)
+                if track_kid and track_kid not in all_kids:
+                    all_kids.append(track_kid)
+
+                for kid in all_kids:
+                    if kid in drm.content_keys:
+                        is_track_kid = ["", "*"][kid == track_kid]
+                        key = drm.content_keys[kid]
+                        label = f"[text2]{kid.hex}:{key}{is_track_kid}"
+                        if not any(f"{kid.hex}:{key}" in x.label for x in cek_tree.children):
+                            cek_tree.add(label)
+                        continue
+
+                    is_track_kid = ["", "*"][kid == track_kid]
+
+                    cached_key = self.LICENSE_KEY_CACHE.get(kid)
+                    if cached_key:
+                        drm.content_keys[kid] = cached_key
+                        label = f"[text2]{kid.hex}:{cached_key}{is_track_kid} from cache"
+                        if not any(f"{kid.hex}:{cached_key}" in x.label for x in cek_tree.children):
+                            cek_tree.add(label)
+                        log_event(
+                            "license_cache_hit",
+                            level="INFO",
+                            service=self.service,
+                            context={
+                                "kid": kid.hex,
+                                "content_key": cached_key,
+                                "track": str(track),
+                                "drm_type": "ClearKeyCENC",
+                            },
+                        )
+                        continue
+
+                    if not cdm_only:
+                        content_key, vault_used = self.vaults.get_key(kid)
+                        if content_key:
+                            drm.content_keys[kid] = content_key
+                            label = f"[text2]{kid.hex}:{content_key}{is_track_kid} from {vault_used}"
+                            if not any(f"{kid.hex}:{content_key}" in x.label for x in cek_tree.children):
+                                cek_tree.add(label)
+                            self.vaults.add_key(kid, content_key, excluding=vault_used)
+                            self.LICENSE_KEY_CACHE[kid] = content_key
+                        elif vaults_only:
+                            msg = f"No Vault has a Key for {kid.hex} and --vaults-only was used"
+                            cek_tree.add(f"[logging.level.error]{msg}")
+                            if not pre_existing_tree:
+                                table.add_row(cek_tree)
+                            log_event(
+                                "vault_key_not_found",
+                                level="ERROR",
+                                service=self.service,
+                                message=msg,
+                                context={"kid": kid.hex, "track": str(track), "drm_type": "ClearKeyCENC"},
+                            )
+                            raise ClearKeyCENC.Exceptions.CEKNotFound(msg)
+                        else:
+                            need_license = True
+
+                    if kid not in drm.content_keys and cdm_only:
+                        need_license = True
+
+                if need_license and all(kid in drm.content_keys for kid in all_kids):
+                    need_license = False
+
+                if need_license and not vaults_only:
+                    from_vaults = drm.content_keys.copy()
+
+                    try:
+                        drm.get_content_keys(licence=clearkey_licence or (lambda **_: None))
+                    except Exception as e:
+                        if drm.content_keys:
+                            self.log.debug(f"License call failed but keys already in content_keys: {e}")
+                        else:
+                            if isinstance(
+                                e, (ClearKeyCENC.Exceptions.EmptyLicense, ClearKeyCENC.Exceptions.CEKNotFound)
+                            ):
+                                msg = str(e)
+                            else:
+                                msg = f"An exception occurred in the Service's license function: {e}"
+                            cek_tree.add(f"[logging.level.error]{msg}")
+                            if not pre_existing_tree:
+                                table.add_row(cek_tree)
+                            if self.debug_logger:
+                                self.debug_logger.log_error(
+                                    "get_license_clearkey",
+                                    e,
+                                    service=self.service,
+                                    context={
+                                        "track": str(track),
+                                        "exception_type": type(e).__name__,
+                                        "drm_type": "ClearKeyCENC",
+                                    },
+                                )
+                            raise e
+
+                    for kid_, key in drm.content_keys.items():
+                        is_track_kid_marker = ["", "*"][kid_ == track_kid]
+                        label = f"[text2]{kid_.hex}:{key}{is_track_kid_marker}"
+                        if not any(f"{kid_.hex}:{key}" in x.label for x in cek_tree.children):
+                            cek_tree.add(label)
+
+                    drm.content_keys.update(from_vaults)
+
+                    self.LICENSE_KEY_CACHE.update(drm.content_keys)
+
+                    successful_caches = self.vaults.add_keys(drm.content_keys)
+                    self.log.info(
+                        f"Cached {len(drm.content_keys)} Key{'' if len(drm.content_keys) == 1 else 's'} to "
+                        f"{successful_caches}/{len(self.vaults)} Vaults"
+                    )
+
+                if track_kid and track_kid not in drm.content_keys:
+                    msg = f"No Content Key for KID {track_kid.hex} was returned in the License"
+                    cek_tree.add(f"[logging.level.error]{msg}")
+                    if not pre_existing_tree:
+                        table.add_row(cek_tree)
+                    raise ClearKeyCENC.Exceptions.CEKNotFound(msg)
 
                 if cek_tree.children and not pre_existing_tree:
                     table.add_row()

@@ -438,6 +438,27 @@ class Service(metaclass=ABCMeta):
         # Delegates license handling to the Widevine license method by default if a service-specific PlayReady implementation is not provided.
         return self.get_widevine_license(challenge=challenge, title=title, track=track)
 
+    def get_clearkey_license(
+        self, *, challenge: bytes, title: Title_T, track: AnyTrack
+    ) -> Optional[Union[bytes, str, dict]]:
+        """
+        Get a W3C ClearKey License (JWK Set) by sending a License Request (challenge).
+
+        Used for DASH `org.w3.clearkey` content. No CDM is involved: the challenge is
+        the W3C EME JSON license request, e.g. ``{"kids": ["<base64url>"], "type": "temporary"}``,
+        and the license is a JWK Set, e.g. ``{"keys": [{"kty": "oct", "k": "...", "kid": "..."}]}``.
+
+        :param challenge: The JSON license request bytes to POST to the license server.
+        :param title: The current `Title` from get_titles that is being executed. This is provided in
+            case it has data needed to be used, e.g. for a HTTP request.
+        :param track: The current `Track` needing decryption. Provided for same reason as `title`.
+        :return: The JWK Set license as a dict, JSON str, or raw bytes. Return None (the default)
+            to let the framework POST the challenge to the manifest-provided Laurl, if any.
+            Services with no license server can instead pre-populate the DRM object's
+            `content_keys` in get_tracks.
+        """
+        return None
+
     # Required Abstract functions
     # The following functions *must* be implemented by the Service.
     # The functions will be executed in shown order.
