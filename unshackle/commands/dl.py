@@ -2182,8 +2182,7 @@ class dl:
             try:
                 with Live(Padding(download_table, (1, 5)), console=console, refresh_per_second=5):
                     with ThreadPoolExecutor(downloads) as pool:
-                        for download in futures.as_completed(
-                            (
+                        future_to_track = {
                                 pool.submit(
                                     track.download,
                                     session=track.session or service.session,
@@ -2211,11 +2210,26 @@ class dl:
                                     cdm=self.cdm,
                                     max_workers=workers,
                                     progress=tracks_progress_callables[i],
-                                )
+                                ): track
                                 for i, track in enumerate(title.tracks)
-                            )
-                        ):
-                            download.result()
+                        }
+                        for download in futures.as_completed(future_to_track):
+                            track = future_to_track[download]
+                            try:
+                                download.result()
+                            except Exception:
+                                # A failed subtitle is non-fatal: skip it and keep going so the
+                                # video/audio still deliver. Logged so clients can report it.
+                                if isinstance(track, Subtitle):
+                                    self.log.warning(
+                                        "SUBTITLE_SKIPPED:%s" % (getattr(track, "language", "") or "")
+                                    )
+                                    try:
+                                        title.tracks.subtitles.remove(track)
+                                    except (ValueError, AttributeError):
+                                        pass
+                                else:
+                                    raise
 
             except KeyboardInterrupt:
                 console.print(Padding(":x: Download Cancelled...", (0, 5, 1, 5)))
