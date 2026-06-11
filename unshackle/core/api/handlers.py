@@ -39,7 +39,7 @@ def _resolve_credential(data: Dict[str, Any], service: str, profile: Optional[st
             isinstance(allowed, (list, tuple, set)) and service in allowed
         )
         if permitted:
-            if isinstance(cred_data, dict) and cred_data.get("username"):
+            if isinstance(cred_data, dict) and cred_data.get("username") and cred_data.get("password"):
                 return Credential(
                     username=cred_data["username"],
                     password=cred_data["password"],
