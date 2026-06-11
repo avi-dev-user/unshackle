@@ -280,6 +280,8 @@ def serialize_title(title: Title_T) -> Dict[str, Any]:
     description = getattr(title, "description", None) or None
     _data = getattr(title, "data", None)
     date = _data.get("date") if isinstance(_data, dict) else None
+    # optional poster/cover image URL a service may stash, for a client to use as the thumbnail
+    cover_url = _data.get("cover_url") if isinstance(_data, dict) else None
 
     if isinstance(title, Episode):
         episode_name = title.name if title.name else f"Episode {title.number:02d}"
@@ -294,6 +296,7 @@ def serialize_title(title: Title_T) -> Dict[str, Any]:
             "language": title_language,
             "description": description,
             "date": date,
+            "cover_url": cover_url,
         }
     elif isinstance(title, Movie):
         result = {
@@ -304,6 +307,7 @@ def serialize_title(title: Title_T) -> Dict[str, Any]:
             "language": title_language,
             "description": description,
             "date": date,
+            "cover_url": cover_url,
         }
     else:
         result = {
@@ -313,6 +317,7 @@ def serialize_title(title: Title_T) -> Dict[str, Any]:
             "language": title_language,
             "description": description,
             "date": date,
+            "cover_url": cover_url,
         }
 
     return result
