@@ -234,7 +234,7 @@ async def services(request: web.Request) -> web.Response:
                 )
 
                 # Auth methods the service accepts. An explicit `AUTH_METHODS` class var is honoured
-                # even when auth is optional (needs_auth=False) — e.g. a free service where cookies
+                # even when auth is optional (needs_auth=False), e.g. a free service where cookies
                 # only unlock higher quality. Otherwise, for services that require auth, infer from
                 # what authenticate() references (mostly both, since services call super()).
                 declared = getattr(service_module, "AUTH_METHODS", None)
