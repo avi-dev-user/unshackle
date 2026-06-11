@@ -233,29 +233,31 @@ async def services(request: web.Request) -> web.Response:
                     or getattr(service_module, "get_playready_license", None) is not _BaseService.get_playready_license
                 )
 
-                # Auth methods the service accepts. Prefer an explicit `AUTH_METHODS` class var
-                # (reliable); otherwise fall back to inferring from what authenticate() references
-                # — that mostly returns both because services call super().authenticate(...).
-                methods = []
-                if service_data["needs_auth"]:
-                    declared = getattr(service_module, "AUTH_METHODS", None)
-                    if declared:
-                        methods = list(declared)
-                    else:
-                        try:
-                            import inspect as _inspect
+                # Auth methods the service accepts. An explicit `AUTH_METHODS` class var is honoured
+                # even when auth is optional (needs_auth=False) — e.g. a free service where cookies
+                # only unlock higher quality. Otherwise, for services that require auth, infer from
+                # what authenticate() references (mostly both, since services call super()).
+                declared = getattr(service_module, "AUTH_METHODS", None)
+                if declared:
+                    methods = list(declared)
+                elif service_data["needs_auth"]:
+                    methods = []
+                    try:
+                        import inspect as _inspect
 
-                            src_lines = _inspect.getsource(service_module.authenticate).splitlines()
-                            start = next((i + 1 for i, ln in enumerate(src_lines) if ln.rstrip().endswith(":")), 1)
-                            body = "\n".join(src_lines[start:])
-                            if "cookies" in body:
-                                methods.append("cookies")
-                            if "credential" in body:
-                                methods.append("credentials")
-                        except (OSError, TypeError):
-                            pass
-                        if not methods:
-                            methods = ["cookies"]
+                        src_lines = _inspect.getsource(service_module.authenticate).splitlines()
+                        start = next((i + 1 for i, ln in enumerate(src_lines) if ln.rstrip().endswith(":")), 1)
+                        body = "\n".join(src_lines[start:])
+                        if "cookies" in body:
+                            methods.append("cookies")
+                        if "credential" in body:
+                            methods.append("credentials")
+                    except (OSError, TypeError):
+                        pass
+                    if not methods:
+                        methods = ["cookies"]
+                else:
+                    methods = []
                 service_data["auth_methods"] = methods
 
             except Exception as e:
