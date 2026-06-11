@@ -6,7 +6,7 @@ a bitrate-weighted percentage, track counts, and the labels of the tracks downlo
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from unshackle.core.constants import AnyTrack
 
@@ -70,6 +70,9 @@ def build_job_progress_callables(
     fractions = [0.0] * total
     done = [False] * total
     started = [False] * total
+    seg_done = [0.0] * total
+    seg_total = [0.0] * total
+    speeds: list[Optional[str]] = [None] * total
 
     def emit() -> None:
         completed = sum(done)
@@ -82,6 +85,8 @@ def build_job_progress_callables(
                 phase += f" (+{len(active) - 3} more)"
         else:
             phase = f"downloading {completed}/{total} tracks"
+        # segment counts and transfer speed of the track downloading now, for a granular display
+        active_i = next((i for i in range(total) if started[i] and not done[i]), None)
         sink(
             {
                 "progress": progress,
@@ -89,6 +94,9 @@ def build_job_progress_callables(
                 "completed_tracks": completed,
                 "total_tracks": total,
                 "active_tracks": active,
+                "segments_done": seg_done[active_i] if active_i is not None else 0.0,
+                "segments_total": seg_total[active_i] if active_i is not None else 0.0,
+                "speed": speeds[active_i] if active_i is not None else None,
                 "status": "downloading",
             }
         )
@@ -104,6 +112,11 @@ def build_job_progress_callables(
                 counts["completed"] = kwargs["completed"]
             if "advance" in kwargs:
                 counts["completed"] += kwargs["advance"]
+            seg_done[index] = counts["completed"]
+            seg_total[index] = counts["total"]
+            _dl = kwargs.get("downloaded")
+            if isinstance(_dl, str) and _dl.endswith("/s"):
+                speeds[index] = _dl
             if kwargs.get("downloaded") in JOB_PROGRESS_TERMINAL_STATES:
                 done[index] = True
                 fractions[index] = 1.0
