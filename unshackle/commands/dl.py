@@ -474,6 +474,9 @@ class dl:
     @click.option("-S", "--subs-only", is_flag=True, default=False, help="Only download subtitle tracks.")
     @click.option("-C", "--chapters-only", is_flag=True, default=False, help="Only download chapter markers.")
     @click.option("-ns", "--no-subs", is_flag=True, default=False, help="Do not download subtitle tracks.")
+    @click.option("--skip-subtitle-errors", is_flag=True, default=False,
+                  help="If a subtitle track fails to download, skip it and continue instead of "
+                       "aborting the whole title (video/audio failures stay fatal).")
     @click.option("-na", "--no-audio", is_flag=True, default=False, help="Do not download audio tracks.")
     @click.option("-nc", "--no-chapters", is_flag=True, default=False, help="Do not download chapter markers.")
     @click.option("-nv", "--no-video", is_flag=True, default=False, help="Do not download video tracks.")
@@ -1051,6 +1054,7 @@ class dl:
         subs_only: bool,
         chapters_only: bool,
         no_subs: bool,
+        skip_subtitle_errors: bool,
         no_audio: bool,
         no_chapters: bool,
         no_video: bool,
@@ -2218,9 +2222,9 @@ class dl:
                             try:
                                 download.result()
                             except Exception:
-                                # A failed subtitle is non-fatal: skip it and keep going so the
-                                # video/audio still deliver. Logged so clients can report it.
-                                if isinstance(track, Subtitle):
+                                # With --skip-subtitle-errors a failed subtitle is non-fatal: skip
+                                # it and keep going so video/audio still deliver (logged for clients).
+                                if skip_subtitle_errors and isinstance(track, Subtitle):
                                     self.log.warning(
                                         "SUBTITLE_SKIPPED:%s" % (getattr(track, "language", "") or "")
                                     )
