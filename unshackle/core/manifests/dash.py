@@ -25,7 +25,7 @@ from requests import Session
 
 from unshackle.core.cdm.detect import is_playready_cdm
 from unshackle.core.constants import DOWNLOAD_CANCELLED, DOWNLOAD_LICENCE_ONLY, AnyTrack
-from unshackle.core.drm import DRM_T, PlayReady, Widevine
+from unshackle.core.drm import DRM_T, ClearKeyCENC, PlayReady, Widevine
 from unshackle.core.events import events
 from unshackle.core.session import RnetSession
 from unshackle.core.tracks import Audio, Subtitle, Tracks, Video
@@ -1046,6 +1046,54 @@ class DASH:
                         kid = None
 
                 drm.append(PlayReady(pssh=pr_pssh, kid=kid, pssh_b64=pr_pssh_b64))
+
+            elif urn == ClearKeyCENC.urn:
+                # W3C EME ClearKey (org.w3.clearkey) — match the scheme UUID alone,
+                # value="ClearKey1.0" is spec'd (DASH-IF CCP) but not required in the wild
+                kid_attr = protection.get("default_KID") or protection.get("{urn:mpeg:cenc:2013}default_KID")
+                kid = None
+                if kid_attr:
+                    try:
+                        kid = UUID(kid_attr)
+                    except ValueError:
+                        try:
+                            kid = UUID(bytes=base64.b64decode(kid_attr))
+                        except Exception:
+                            kid = None
+
+                if not kid:
+                    # DASH-IF puts default_KID on the sibling mp4protection element
+                    kid = next(
+                        (
+                            UUID(p.get("default_KID") or p.get("{urn:mpeg:cenc:2013}default_KID"))
+                            for p in protections
+                            if p.get("default_KID") or p.get("{urn:mpeg:cenc:2013}default_KID")
+                        ),
+                        None,
+                    )
+
+                if not kid or kid in PLACEHOLDER_KIDS:
+                    continue
+
+                # license URL appears under several namespaces/casings in the wild
+                laurl = next(
+                    (
+                        text.strip()
+                        for name in (
+                            "{https://dashif.org/CPS}Laurl",
+                            "{https://dashif.org/CPS}laurl",
+                            "{http://dashif.org/guidelines/clearKey}Laurl",
+                            "{http://dashif.org/guidelines/clearKey}laurl",
+                            "Laurl",
+                            "laurl",
+                        )
+                        for text in [protection.findtext(name)]
+                        if text and text.strip()
+                    ),
+                    None,
+                )
+
+                drm.append(ClearKeyCENC(kids=[kid], laurl=laurl))
 
         return drm
 

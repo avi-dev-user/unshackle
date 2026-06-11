@@ -64,7 +64,7 @@ class EXAMPLE(Service):
         get_chapters          Chapters() with named + unnamed markers
         get_widevine_*        service cert + license (per-segment PSSH via `track`)
         get_playready_license PlayReady challenge POST
-        get_clearkey          DRM-free / ClearKey fallback (commented alternate)
+        get_clearkey_license  DASH org.w3.clearkey JWK Set POST (Laurl fallback)
     """
 
     # ALIASES: extra CLI tags that resolve to this service (e.g. `dl EX ...`).
@@ -486,7 +486,20 @@ class EXAMPLE(Service):
         response.raise_for_status()
         return response.content
 
-    # For ClearKey or unencrypted content there is no license callback; instead the
-    # KID:KEY pair comes from the manifest or a side endpoint and is attached to the
+    def get_clearkey_license(
+        self, *, challenge: bytes, title: Title_T, track: AnyTrack
+    ) -> Optional[Union[bytes, str, dict]]:
+        # DASH org.w3.clearkey: `challenge` is the W3C JSON license request; return the
+        # JWK Set response. Omit this method entirely when the manifest carries a Laurl —
+        # the framework then POSTs the challenge there with no service code at all.
+        license_url = self.config["endpoints"].get("clearkey_license")
+        if not license_url:
+            return None  # fall back to the manifest-provided Laurl, if any
+        response = self.session.post(url=license_url, data=challenge)
+        response.raise_for_status()
+        return response.json()
+
+    # For HLS AES-128 ClearKey or unencrypted content there is no license callback;
+    # the key comes from the manifest or a side endpoint and is attached to the
     # track's DRM directly. Vaults (`self.cache` is separate) cache KID:KEY so repeat
     # downloads skip the license round-trip entirely.

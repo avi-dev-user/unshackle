@@ -14,7 +14,9 @@ from types import SimpleNamespace
 from uuid import UUID
 
 from unshackle.commands.dl import dl
+from unshackle.core.drm import drm_from_dict
 from unshackle.core.drm.clearkey import ClearKey
+from unshackle.core.drm.clearkey_cenc import ClearKeyCENC
 from unshackle.core.import_service import ImportService
 from unshackle.core.titles import Movie
 from unshackle.core.tracks import Audio, Chapter, Subtitle, Video
@@ -160,6 +162,25 @@ def test_drm_free_export_roundtrips_through_import_service(tmp_path: Path) -> No
 
     # Chapters.add auto-inserts a nameless 00:00:00 baseline chapter; it round-trips too.
     assert [c.name for c in svc.get_chapters(movie)] == [None, "Intro"]
+
+
+def test_clearkey_cenc_exports_drm_and_keys(tmp_path: Path) -> None:
+    """A licensed ClearKeyCENC exports its system dict and KID:KEY map, and the
+    exported DRM dict plus keys rebuild a decrypt-ready instance via drm_from_dict."""
+    export = tmp_path / "export.json"
+    title = make_title()
+    video = title.tracks.videos[0]
+    drm = ClearKeyCENC(kids=[KID], laurl="https://license.example.test/ck", content_keys={KID: "cc" * 16})
+
+    make_dl().write_export(export, title, video, drm)
+
+    track = read_export(export)["titles"]["movie-1"]["tracks"]["v1"]
+    assert track["drm"] == [{"system": "ClearKeyCENC", "kids": [KID.hex], "laurl": "https://license.example.test/ck"}]
+    assert track["keys"] == {KID.hex: "cc" * 16}
+
+    rebuilt = drm_from_dict({**track["drm"][0], "content_keys": track["keys"]})
+    assert isinstance(rebuilt, ClearKeyCENC)
+    assert rebuilt.content_keys == {KID: "cc" * 16}
 
 
 def test_keyless_content_keys_writes_no_keys_entry(tmp_path: Path) -> None:
