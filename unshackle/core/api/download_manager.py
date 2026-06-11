@@ -22,6 +22,28 @@ def _sanitize_log(value: object) -> str:
     return str(value).replace("\n", "").replace("\r", "").replace("\x00", "")
 
 
+# Job parameters may carry secrets (a raw "user:pass" credential, a proxy URL with embedded
+# userinfo). These must never leave the process via an API response, so they are masked
+# wherever parameters are serialized for a client.
+_REDACTED = "***"
+_SENSITIVE_PARAM_KEYS = ("credential", "credentials", "password", "token", "api_key")
+_PROXY_USERINFO_RE = re.compile(r"(?<=://)[^/@]+@")
+
+
+def _redact_parameters(parameters: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a copy of job parameters with secrets masked, safe to serialize."""
+    if not isinstance(parameters, dict):
+        return parameters
+    redacted = dict(parameters)
+    for key in _SENSITIVE_PARAM_KEYS:
+        if redacted.get(key):
+            redacted[key] = _REDACTED
+    proxy = redacted.get("proxy")
+    if isinstance(proxy, str) and "@" in proxy:
+        redacted["proxy"] = _PROXY_USERINFO_RE.sub(f"{_REDACTED}@", proxy)
+    return redacted
+
+
 class JobStatus(Enum):
     QUEUED = "queued"
     DOWNLOADING = "downloading"
@@ -71,7 +93,7 @@ class DownloadJob:
         if include_full_details:
             result.update(
                 {
-                    "parameters": self.parameters,
+                    "parameters": _redact_parameters(self.parameters),
                     "started_time": self.started_time.isoformat() if self.started_time else None,
                     "completed_time": self.completed_time.isoformat() if self.completed_time else None,
                     "output_files": self.output_files,
