@@ -9,6 +9,7 @@ from unshackle.core.api.errors import APIError, APIErrorCode, handle_api_excepti
 from unshackle.core.api.input_bridge import AuthStatus, InputBridge
 from unshackle.core.config import config
 from unshackle.core.constants import AUDIO_CODEC_MAP, DYNAMIC_RANGE_MAP, VIDEO_CODEC_MAP
+from unshackle.core.credential import Credential
 from unshackle.core.proxies.resolve import initialize_proxy_providers, resolve_proxy
 from unshackle.core.services import Services
 from unshackle.core.titles import Episode, Movie, Title_T
@@ -20,6 +21,28 @@ log = logging.getLogger("api")
 def sanitize_log(value: object) -> str:
     """Sanitize a value for safe logging by removing newlines and control characters."""
     return str(value).replace("\n", "").replace("\r", "").replace("\x00", "")
+
+
+def _resolve_credential(data: Dict[str, Any], service: str, profile: Optional[str]):
+    """Resolve the Credential for a request: a client-sent per-request credential takes
+    precedence over the server-local profile credential. This lets a single trusted
+    front-end authenticate on behalf of an end-user (search/list/download) without that
+    user's credentials living in the server config. Accepts either a ``credentials``
+    object ({username, password, [extra]}) or a ``credential`` "user:pass" string;
+    falls back to the configured profile credential when neither is sent."""
+    cred_data = data.get("credentials")
+    if isinstance(cred_data, dict) and cred_data.get("username"):
+        return Credential(
+            username=cred_data["username"],
+            password=cred_data["password"],
+            extra=cred_data.get("extra"),
+        )
+    cred_str = data.get("credential")
+    if isinstance(cred_str, str) and cred_str:
+        return Credential.loads(cred_str)
+    from unshackle.commands.dl import dl  # lazy: avoids a circular import at module load
+
+    return dl.get_credentials(service, profile)
 
 
 DEFAULT_DOWNLOAD_PARAMS = {
@@ -549,7 +572,7 @@ async def search_handler(data: Dict[str, Any], request: Optional[web.Request] = 
 
     # Authenticate
     cookies = dl.get_cookie_jar(normalized_service, profile)
-    credential = dl.get_credentials(normalized_service, profile)
+    credential = _resolve_credential(data, normalized_service, profile)
     service_instance.authenticate(cookies, credential)
 
     # Search
@@ -632,7 +655,7 @@ async def list_titles_handler(data: Dict[str, Any], request: Optional[web.Reques
         service_instance = instantiate_service(parent_ctx, service_module, title_id, data, LIST_HANDLER_TRANSPORT_KEYS)
 
         cookies = dl.get_cookie_jar(normalized_service, profile)
-        credential = dl.get_credentials(normalized_service, profile)
+        credential = _resolve_credential(data, normalized_service, profile)
         service_instance.authenticate(cookies, credential)
 
         titles = service_instance.get_titles()
@@ -713,7 +736,7 @@ async def list_tracks_handler(data: Dict[str, Any], request: Optional[web.Reques
         service_instance = instantiate_service(parent_ctx, service_module, title_id, data, LIST_HANDLER_TRANSPORT_KEYS)
 
         cookies = dl.get_cookie_jar(normalized_service, profile)
-        credential = dl.get_credentials(normalized_service, profile)
+        credential = _resolve_credential(data, normalized_service, profile)
         service_instance.authenticate(cookies, credential)
 
         titles = service_instance.get_titles()
@@ -1244,7 +1267,6 @@ def _create_service_instance(
     to server-local config (for backward compatibility).
     """
     from unshackle.commands.dl import dl
-    from unshackle.core.credential import Credential
     from unshackle.core.tracks import Video
 
     service_config = load_service_yaml(normalized_service)
@@ -1294,16 +1316,8 @@ def _create_service_instance(
     service_module = Services.load(normalized_service)
     service_instance = instantiate_service(parent_ctx, service_module, title_id, data, SESSION_TRANSPORT_KEYS)
 
-    # Resolve credentials: client-sent > server-local
-    cred_data = data.get("credentials")
-    if cred_data and isinstance(cred_data, dict):
-        credential = Credential(
-            username=cred_data["username"],
-            password=cred_data["password"],
-            extra=cred_data.get("extra"),
-        )
-    else:
-        credential = dl.get_credentials(normalized_service, profile)
+    # Resolve credentials: client-sent per-request > server-local profile
+    credential = _resolve_credential(data, normalized_service, profile)
 
     # Resolve cookies: client-sent > server-local
     cookie_text = data.get("cookies")
