@@ -396,6 +396,7 @@ def _perform_download(
                 subs_only=params.get("subs_only", False),
                 chapters_only=params.get("chapters_only", False),
                 no_subs=params.get("no_subs", False),
+                skip_subtitle_errors=params.get("skip_subtitle_errors", False),
                 no_audio=params.get("no_audio", False),
                 no_chapters=params.get("no_chapters", False),
                 no_video=params.get("no_video", False),
