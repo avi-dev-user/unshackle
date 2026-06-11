@@ -54,6 +54,9 @@ class DownloadJob:
     error_traceback: Optional[str] = None
     worker_stderr: Optional[str] = None
 
+    # Human-readable current phase (e.g. "downloading video 1080p")
+    phase: Optional[str] = None
+
     # Cancellation support
     cancel_event: threading.Event = field(default_factory=threading.Event)
 
@@ -66,6 +69,7 @@ class DownloadJob:
             "service": self.service,
             "title_id": self.title_id,
             "progress": self.progress,
+            "phase": self.phase,
         }
 
         if include_full_details:
@@ -224,6 +228,9 @@ def _perform_download(
         enrich=params.get("enrich", False),
         output_dir=Path(params["output_dir"]) if params.get("output_dir") else None,
     )
+    # Per-request CDM override (a device name in the WVDs dir); get_cdm() takes it first.
+    if params.get("cdm"):
+        dl_instance.cdm_override = params["cdm"]
 
     service_module = Services.load(service)
 
@@ -276,7 +283,58 @@ def _perform_download(
         # Report initial progress
         progress_callback({"progress": 0.0, "status": "starting"})
 
-        # Simple approach: report progress at key points
+        # Tee each Track.download's progress callable so the downloader's live percentage
+        # is forwarded to the API job (not just 5%/100%), and expose which track is being
+        # downloaded now as a human-readable phase.
+        from unshackle.core.tracks.track import Track as _Track
+
+        if not getattr(_Track, "_api_progress_patched", False):
+            _orig_track_download = _Track.download
+
+            def _download_with_progress(self, *args, **kwargs):
+                inner_progress = kwargs.get("progress")
+                track_type = type(self).__name__
+                phase = {
+                    "Video": "downloading video",
+                    "Audio": "downloading audio",
+                    "Subtitle": "downloading subtitle",
+                }.get(track_type, f"downloading {track_type.lower()}")
+                height = getattr(self, "height", None)
+                language = getattr(self, "language", None)
+                if height:
+                    phase += f" {height}p"
+                elif track_type in ("Audio", "Subtitle") and language:
+                    phase += f" {language}"
+                progress_callback({"phase": phase, "status": "downloading"})
+
+                if callable(inner_progress):
+                    counts = {"completed": 0.0, "total": 0.0}
+
+                    def tee(*tee_args, **tee_kwargs):
+                        if tee_kwargs.get("total"):
+                            counts["total"] = tee_kwargs["total"]
+                        if tee_kwargs.get("completed") is not None:
+                            counts["completed"] = tee_kwargs["completed"]
+                        if "advance" in tee_kwargs:
+                            counts["completed"] += tee_kwargs["advance"]
+                        if counts["total"]:
+                            pct = counts["completed"] * 100.0 / counts["total"]
+                        elif counts["completed"] <= 100:  # n_m3u8dl reports a direct percent
+                            pct = counts["completed"]
+                        else:
+                            pct = 0
+                        if pct:
+                            progress_callback(
+                                {"progress": min(99.0, float(pct)), "phase": phase, "status": "downloading"}
+                            )
+                        return inner_progress(*tee_args, **tee_kwargs)
+
+                    kwargs["progress"] = tee
+                return _orig_track_download(self, *args, **kwargs)
+
+            _Track.download = _download_with_progress
+            _Track._api_progress_patched = True
+
         original_result = dl_instance.result
 
         def result_with_progress(*args, **kwargs):
@@ -364,6 +422,15 @@ def _perform_download(
         log.error(f"Stdout: {stdout_str}")
         log.error(f"Stderr: {stderr_str}")
         raise
+
+    # dl.result() catches a download-worker exception, prints "Download Failed", but returns
+    # normally (exit 0). Detect that swallowed failure so the job isn't reported as completed
+    # with no output.
+    captured = stdout_capture.getvalue() + stderr_capture.getvalue()
+    if "An unexpected error occurred in one of the download" in captured or "Download Failed" in captured:
+        marker = captured.find("Download Error")
+        detail = (captured[marker:marker + 200] if marker >= 0 else captured[-200:]).strip()
+        raise Exception("download worker failed: " + (detail or "see logs"))
 
     output_files = [str(p) for p in dl_instance.completed_files]
     log.info(f"Download completed for job {job_id}, {len(output_files)} file(s) in {original_download_dir}")
@@ -647,6 +714,8 @@ class DownloadQueueManager:
                     if os.path.exists(progress_path):
                         with open(progress_path, "r", encoding="utf-8") as handle:
                             progress_data = json.load(handle)
+                            if progress_data.get("phase") and progress_data["phase"] != job.phase:
+                                job.phase = progress_data["phase"]
                             if "progress" in progress_data:
                                 new_progress = float(progress_data["progress"])
                                 if new_progress != job.progress:
