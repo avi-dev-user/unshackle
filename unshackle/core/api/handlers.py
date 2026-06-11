@@ -24,22 +24,29 @@ def sanitize_log(value: object) -> str:
 
 
 def _resolve_credential(data: Dict[str, Any], service: str, profile: Optional[str]):
-    """Resolve the Credential for a request: a client-sent per-request credential takes
-    precedence over the server-local profile credential. This lets a single trusted
-    front-end authenticate on behalf of an end-user (search/list/download) without that
-    user's credentials living in the server config. Accepts either a ``credentials``
-    object ({username, password, [extra]}) or a ``credential`` "user:pass" string;
-    falls back to the configured profile credential when neither is sent."""
+    """Resolve the Credential for a request. A client-sent per-request credential lets a single
+    trusted front-end authenticate on behalf of an end-user (search/list/download) without that
+    user's credentials living in the server config - but it is gated so a server never forwards
+    arbitrary client credentials by default. ``serve.allow_job_credentials`` opts in: ``true``
+    permits any service, a list permits only those service tags; unset/false ignores client
+    credentials. Accepts a ``credentials`` object ({username, password, [extra]}) or a
+    ``credential`` "user:pass" string; falls back to the configured profile credential otherwise."""
     cred_data = data.get("credentials")
-    if isinstance(cred_data, dict) and cred_data.get("username"):
-        return Credential(
-            username=cred_data["username"],
-            password=cred_data["password"],
-            extra=cred_data.get("extra"),
-        )
     cred_str = data.get("credential")
-    if isinstance(cred_str, str) and cred_str:
-        return Credential.loads(cred_str)
+    if cred_data or cred_str:
+        allowed = (config.serve or {}).get("allow_job_credentials")
+        permitted = allowed is True or (
+            isinstance(allowed, (list, tuple, set)) and service in allowed
+        )
+        if permitted:
+            if isinstance(cred_data, dict) and cred_data.get("username"):
+                return Credential(
+                    username=cred_data["username"],
+                    password=cred_data["password"],
+                    extra=cred_data.get("extra"),
+                )
+            if isinstance(cred_str, str) and cred_str:
+                return Credential.loads(cred_str)
     from unshackle.commands.dl import dl  # lazy: avoids a circular import at module load
 
     return dl.get_credentials(service, profile)
