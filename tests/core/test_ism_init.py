@@ -13,7 +13,8 @@ import struct
 import pytest
 
 from unshackle.core.manifests.ism_init import (NAL_START_CODE, PIFF_SENC_UUID, box, build_avcc, build_dec3,
-                                               build_hvcc, build_init_segment, full_box, parse_hevc_sps_format,
+                                               build_hvcc, build_init_segment, full_box,
+                                               parse_codec_private_data_colour, parse_hevc_sps_format,
                                                read_per_sample_iv_size, read_track_id, remove_emulation_prevention,
                                                split_nal_units, synthesize_aac_codec_private_data)
 
@@ -29,6 +30,28 @@ VIDEO_AVC_CPD = "00000001674d401e9a6602800b76020000003e90000bb800f18311200000000
 VIDEO_HEVC10_CPD = (
     "0000000140010c01ffff02200000030090000003000003003c959809000000000142010102200000030090"
     "000003000003003ca00a080b9f6d96566924caf0168080000003008000000c8400000000014401c172b4624000"
+)
+# HEVC VPS+SPS+PPS minted with x265, explicit SPS VUI colour signalling:
+# PQ (bt2020/smpte2084/bt2020nc), HLG (arib-std-b67) and BT.709 SDR.
+VIDEO_HEVC_PQ_CPD = (
+    "0000000140010c01ffff02200000030090000003000003001e9598090000000142010102200000030090000003000003001ea020"
+    "8104d96566924caf016a12201208000003000800000300c840000000014401c172b42240"
+)
+VIDEO_HEVC_HLG_CPD = (
+    "0000000140010c01ffff02200000030090000003000003001e9598090000000142010102200000030090000003000003001ea020"
+    "8104d96566924caf016a12241208000003000800000300c840000000014401c172b42240"
+)
+VIDEO_HEVC_SDR_CPD = (
+    "0000000140010c01ffff02200000030090000003000003001e9598090000000142010102200000030090000003000003001ea020"
+    "8104d96566924caf016a02020208000003000800000300c840000000014401c172b42240"
+)
+# Real Dolby Vision (dvhe, DoViProfile "stn") CodecPrivateData from a Smooth
+# manifest: NALs arrive SPS,PPS,VPS (VPS last) and the VUI colour triple is
+# Unspecified (2,2,2) — DV is signalled by FourCC only, never by CICP.
+VIDEO_HEVC_DV_CPD = (
+    "00000001420101022000000300B00000030000030096A001E020021C4D9457B91CAF016E0404042800001F480002EE0401F4E1"
+    "15EE7E0001312D00002FAF0C80000000014401C1ACBE0EC90000000140010C01FFFF022000000300B00000030000030096"
+    "15C0C00000FA40001770200FA680"
 )
 AAC_LC_CPD = "1190"
 # Real Smooth EC-3 CodecPrivateData: WAVEFORMATEXTENSIBLE extension (samples
@@ -398,6 +421,55 @@ def test_read_track_id_truncated_tfhd_returns_none():
     tfhd = full_box(b"tfhd", 0, 0, b"\x00\x00")  # too short for a track_ID
     fragment = box(b"moof", box(b"traf", tfhd))
     assert read_track_id(fragment) is None
+
+
+def test_parse_colour_hevc_pq():
+    # PQ master: bt2020 primaries (9), smpte2084 transfer (16), bt2020nc matrix (9).
+    assert parse_codec_private_data_colour("HVC1", bytes.fromhex(VIDEO_HEVC_PQ_CPD)) == (9, 16, 9)
+
+
+def test_parse_colour_hevc_hlg():
+    assert parse_codec_private_data_colour("HVC1", bytes.fromhex(VIDEO_HEVC_HLG_CPD)) == (9, 18, 9)
+
+
+def test_parse_colour_hevc_bt709():
+    assert parse_codec_private_data_colour("HVC1", bytes.fromhex(VIDEO_HEVC_SDR_CPD)) == (1, 1, 1)
+    # The real-manifest 8-bit sample also signals BT.709 explicitly.
+    assert parse_codec_private_data_colour("HVC1", bytes.fromhex(VIDEO_HEVC_CPD)) == (1, 1, 1)
+
+
+def test_parse_colour_dv_is_unspecified():
+    # DV carries no usable CICP; the DV decision must come from the FourCC.
+    assert parse_codec_private_data_colour("DVHE", bytes.fromhex(VIDEO_HEVC_DV_CPD)) == (2, 2, 2)
+
+
+def test_dv_cpd_with_vps_last_builds_init():
+    cpd = bytes.fromhex(VIDEO_HEVC_DV_CPD)
+    nals = split_nal_units(cpd)
+    assert [(n[0] >> 1) & 0x3F for n in nals] == [33, 34, 32]  # SPS, PPS, VPS
+    sps = remove_emulation_prevention(nals[0])
+    assert parse_hevc_sps_format(sps) == (1, 2, 2)  # 4:2:0, 10-bit
+    hvcc = build_hvcc(cpd)
+    for nal in nals:
+        assert nal in hvcc
+    init = build_init_segment(
+        stream_type="video",
+        fourcc="DVHE",
+        codec_private_data=VIDEO_HEVC_DV_CPD,
+        timescale=10000000,
+        width=3840,
+        height=2160,
+    )
+    assert b"dvh1" in init and b"hvcC" in init
+
+
+def test_parse_colour_absent_or_unknown_returns_none():
+    # Real sample without a VUI colour description.
+    assert parse_codec_private_data_colour("HVC1", bytes.fromhex(VIDEO_HEVC10_CPD)) is None
+    # Non-HEVC codecs (AVC has no HDR deployment) and truncated data must not raise.
+    assert parse_codec_private_data_colour("H264", bytes.fromhex(VIDEO_AVC_CPD)) is None
+    assert parse_codec_private_data_colour("WVC1", bytes.fromhex(VIDEO_AVC_CPD)) is None
+    assert parse_codec_private_data_colour("HVC1", b"\x00\x00\x00\x01\x42") is None
 
 
 def test_hvcc_profile_tier_level_is_nonzero():
