@@ -65,6 +65,12 @@ PYSUBS2_FORMATS: dict[Codec, str] = {
 }
 
 
+def is_seconv(binary: object) -> bool:
+    """True for the SubtitleEdit 5+ CLI (seconv); 4.x binaries need legacy /convert syntax."""
+    name = str(binary).replace("\\", "/").rsplit("/", 1)[-1]
+    return name.lower().rsplit(".", 1)[0] == "seconv"
+
+
 def subtitleedit_args(
     binary: object,
     src: Path,
@@ -76,15 +82,25 @@ def subtitleedit_args(
     reverse_rtl: bool = False,
 ) -> list[str]:
     """
-    Build a SubtitleEdit batch-convert command.
+    Build a SubtitleEdit batch-convert command in 5.x (seconv ``--flags``) or 4.x
+    (``/convert /flags``) syntax, per ``is_seconv``.
 
-    Targets the SubtitleEdit 5+ CLI (``SeConv`` / ``seconv`` on every platform), which takes
-    ``--flags`` with a positional ``<pattern> <format>`` (no legacy ``/convert`` verb). The
-    SE5 converter names the output ``<input-stem>.<format-ext>``; pass ``output_folder`` to
-    place it next to a chosen path (a bare ``--output-filename`` resolves against the *cwd*,
-    not the input dir, so we always steer with ``--output-folder``). ``--overwrite`` is always
-    set so re-runs and in-place transforms (SDH/RTL) don't fail on an existing file.
+    Both name the output ``<input-stem>.<format-ext>``; ``output_folder`` steers placement
+    (a bare ``--output-filename`` resolves against the cwd, not the input dir). Overwrite is
+    always set so re-runs and in-place transforms (SDH/RTL) don't fail on an existing file.
     """
+    if not is_seconv(binary):
+        args = [str(binary), "/convert", str(src), fmt, "/encoding:utf8", "/overwrite"]
+        if output_folder is not None:
+            args.append(f"/outputfolder:{output_folder}")
+        if convert_colors:
+            args.append("/ConvertColorsToDialog")
+        if remove_hi:
+            args.append("/RemoveTextForHI")
+        if reverse_rtl:
+            args.append("/ReverseRtlStartEnd")
+        return args
+
     args = [str(binary), str(src), fmt, "--encoding:utf-8", "--overwrite"]
     if output_folder is not None:
         args.append(f"--output-folder:{output_folder}")
