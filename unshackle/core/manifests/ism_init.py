@@ -129,13 +129,15 @@ class BitReader:
                 raise ValueError("Invalid exp-Golomb code")
         return (1 << zeros) - 1 + (self.read_bits(zeros) if zeros else 0)
 
+    def read_se(self) -> int:
+        # se(v): 0,1,2,3,... -> 0,1,-1,2,...
+        value = self.read_ue()
+        return (value + 1) >> 1 if value & 1 else -(value >> 1)
 
-def parse_hevc_sps_format(sps_rbsp: bytes) -> tuple[int, int, int]:
-    """
-    Parse (chroma_format_idc, bit_depth_luma_minus8, bit_depth_chroma_minus8)
-    from a de-emulated HEVC SPS RBSP (including its 2-byte NAL header).
-    """
-    r = BitReader(sps_rbsp)
+
+def read_hevc_sps_to_bit_depth(r: BitReader) -> tuple[int, int, int, int]:
+    """Advance reader through bit_depth_chroma_minus8; returns
+    (chroma_format_idc, bit_depth_luma, bit_depth_chroma, max_sub_layers_minus1)."""
     r.read_bits(16)  # NAL unit header
     r.read_bits(4)  # sps_video_parameter_set_id
     max_sub_layers_minus1 = r.read_bits(3)
@@ -164,7 +166,116 @@ def parse_hevc_sps_format(sps_rbsp: bytes) -> tuple[int, int, int]:
             r.read_ue()
     bit_depth_luma_minus8 = r.read_ue()
     bit_depth_chroma_minus8 = r.read_ue()
+    return chroma_format_idc, bit_depth_luma_minus8, bit_depth_chroma_minus8, max_sub_layers_minus1
+
+
+def parse_hevc_sps_format(sps_rbsp: bytes) -> tuple[int, int, int]:
+    """
+    Parse (chroma_format_idc, bit_depth_luma_minus8, bit_depth_chroma_minus8)
+    from a de-emulated HEVC SPS RBSP (including its 2-byte NAL header).
+    """
+    r = BitReader(sps_rbsp)
+    chroma_format_idc, bit_depth_luma_minus8, bit_depth_chroma_minus8, _ = read_hevc_sps_to_bit_depth(r)
     return chroma_format_idc, bit_depth_luma_minus8, bit_depth_chroma_minus8
+
+
+def skip_hevc_scaling_list_data(r: BitReader) -> None:
+    """Skip an HEVC scaling_list_data() syntax structure (H.265 7.3.4)."""
+    for size_id in range(4):
+        matrix_id = 0
+        while matrix_id < 6:
+            if not r.read_bits(1):  # scaling_list_pred_mode_flag
+                r.read_ue()  # scaling_list_pred_matrix_id_delta
+            else:
+                coef_num = min(64, 1 << (4 + (size_id << 1)))
+                if size_id > 1:
+                    r.read_se()  # scaling_list_dc_coef_minus8
+                for _ in range(coef_num):
+                    r.read_se()  # scaling_list_delta_coef
+            matrix_id += 3 if size_id == 3 else 1
+
+
+def skip_hevc_st_ref_pic_set(r: BitReader, idx: int, num_delta_pocs: list[int]) -> int:
+    """Skip one st_ref_pic_set() (H.265 7.3.7); returns its NumDeltaPocs."""
+    if idx and r.read_bits(1):  # inter_ref_pic_set_prediction_flag
+        r.read_bits(1)  # delta_rps_sign
+        r.read_ue()  # abs_delta_rps_minus1
+        count = 0
+        for _ in range(num_delta_pocs[idx - 1] + 1):
+            used_by_curr_pic = r.read_bits(1)
+            use_delta = 1 if used_by_curr_pic else r.read_bits(1)
+            if used_by_curr_pic or use_delta:
+                count += 1
+        return count
+    num_negative = r.read_ue()
+    num_positive = r.read_ue()
+    for _ in range(num_negative + num_positive):
+        r.read_ue()  # delta_poc_sX_minus1
+        r.read_bits(1)  # used_by_curr_pic_sX_flag
+    return num_negative + num_positive
+
+
+def parse_hevc_sps_colour(sps_rbsp: bytes) -> Optional[tuple[int, int, int]]:
+    """VUI (colour_primaries, transfer_characteristics, matrix_coeffs) from a
+    de-emulated HEVC SPS, or None when no colour description is present."""
+    r = BitReader(sps_rbsp)
+    _, _, _, max_sub_layers_minus1 = read_hevc_sps_to_bit_depth(r)
+    log2_max_poc_lsb_minus4 = r.read_ue()
+    sub_layer_ordering_info = r.read_bits(1)
+    for _ in range(max_sub_layers_minus1 + 1 if sub_layer_ordering_info else 1):
+        r.read_ue()  # sps_max_dec_pic_buffering_minus1
+        r.read_ue()  # sps_max_num_reorder_pics
+        r.read_ue()  # sps_max_latency_increase_plus1
+    for _ in range(6):  # luma coding/transform block sizes + transform hierarchy depths
+        r.read_ue()
+    if r.read_bits(1) and r.read_bits(1):  # scaling_list_enabled + sps_scaling_list_data_present
+        skip_hevc_scaling_list_data(r)
+    r.read_bits(2)  # amp_enabled_flag + sample_adaptive_offset_enabled_flag
+    if r.read_bits(1):  # pcm_enabled_flag
+        r.read_bits(8)  # pcm sample bit depths (4 + 4)
+        r.read_ue()  # log2_min_pcm_luma_coding_block_size_minus3
+        r.read_ue()  # log2_diff_max_min_pcm_luma_coding_block_size
+        r.read_bits(1)  # pcm_loop_filter_disabled_flag
+    num_delta_pocs: list[int] = []
+    for idx in range(r.read_ue()):  # num_short_term_ref_pic_sets
+        num_delta_pocs.append(skip_hevc_st_ref_pic_set(r, idx, num_delta_pocs))
+    if r.read_bits(1):  # long_term_ref_pics_present_flag
+        for _ in range(r.read_ue()):  # num_long_term_ref_pics_sps
+            r.read_bits(log2_max_poc_lsb_minus4 + 4)  # lt_ref_pic_poc_lsb_sps
+            r.read_bits(1)  # used_by_curr_pic_lt_sps_flag
+    r.read_bits(2)  # sps_temporal_mvp_enabled + strong_intra_smoothing_enabled
+    if not r.read_bits(1):  # vui_parameters_present_flag
+        return None
+    if r.read_bits(1):  # aspect_ratio_info_present_flag
+        if r.read_bits(8) == 255:  # aspect_ratio_idc == EXTENDED_SAR
+            r.read_bits(32)  # sar_width + sar_height
+    if r.read_bits(1):  # overscan_info_present_flag
+        r.read_bits(1)  # overscan_appropriate_flag
+    if not r.read_bits(1):  # video_signal_type_present_flag
+        return None
+    r.read_bits(3)  # video_format
+    r.read_bits(1)  # video_full_range_flag
+    if not r.read_bits(1):  # colour_description_present_flag
+        return None
+    return r.read_bits(8), r.read_bits(8), r.read_bits(8)
+
+
+HEVC_FOURCCS = frozenset(("HVC1", "HEV1", "HEVC", "H265", "DVHE", "DVH1"))
+
+
+def parse_codec_private_data_colour(fourcc: str, codec_private_data: bytes) -> Optional[tuple[int, int, int]]:
+    """SPS VUI colour triple from HEVC CodecPrivateData; None when the codec
+    is unsupported, no colour description, or malformed data."""
+    if (fourcc or "").upper() not in HEVC_FOURCCS:
+        return None
+    try:
+        nals = split_nal_units(codec_private_data)
+        sps = next((n for n in nals if (n[0] >> 1) & 0x3F == 33), None)
+        if sps is None:
+            return None
+        return parse_hevc_sps_colour(remove_emulation_prevention(sps))
+    except (IndexError, ValueError):
+        return None
 
 
 def iter_boxes(data: bytes, start: int, end: int) -> Iterator[tuple[bytes, Optional[bytes], int, int]]:

@@ -19,7 +19,8 @@ from requests import Session
 from unshackle.core.constants import DOWNLOAD_CANCELLED, DOWNLOAD_LICENCE_ONLY, AnyTrack
 from unshackle.core.drm import DRM_T, PlayReady, Widevine
 from unshackle.core.events import events
-from unshackle.core.manifests.ism_init import build_init_segment, read_per_sample_iv_size, read_track_id
+from unshackle.core.manifests.ism_init import (build_init_segment, parse_codec_private_data_colour,
+                                               read_per_sample_iv_size, read_track_id)
 from unshackle.core.session import RnetSession
 from unshackle.core.tracks import Audio, Subtitle, Track, Tracks, Video
 from unshackle.core.utilities import log_event, try_ensure_utf8
@@ -86,6 +87,22 @@ class ISM:
                     continue
                 drm.append(PlayReady(pssh=pr_pssh, pssh_b64=data))
         return drm
+
+    @staticmethod
+    def get_video_range(fourcc: str, codec_private_data: str) -> Video.Range:
+        """Derive colour range from the SPS VUI in CodecPrivateData — Smooth
+        manifests carry no range attributes. Soft-fails to SDR."""
+        fourcc = (fourcc or "").upper()
+        if fourcc in ("DVHE", "DVH1"):
+            return Video.Range.DV
+        try:
+            cpd = bytes.fromhex(codec_private_data or "")
+        except ValueError:
+            return Video.Range.SDR
+        cicp = parse_codec_private_data_colour(fourcc, cpd)
+        if not cicp:
+            return Video.Range.SDR
+        return Video.Range.from_cicp(*cicp)
 
     @staticmethod
     def _init_segment(
@@ -280,6 +297,7 @@ class ISM:
                             id_=track_id,
                             url=self.url,
                             codec=vcodec,
+                            range_=self.get_video_range(codec or "", ql.get("CodecPrivateData") or ""),
                             language=track_lang or language,
                             is_original_lang=bool(language and track_lang and str(track_lang) == str(language)),
                             bitrate=ql.get("Bitrate"),
@@ -351,7 +369,7 @@ class ISM:
         save_path: Path,
         save_dir: Path,
         progress: partial,
-        session: Optional[Session] = None,
+        session: Optional[Union[Session, RnetSession]] = None,
         proxy: Optional[str] = None,
         max_workers: Optional[int] = None,
         license_widevine: Optional[Callable] = None,
@@ -360,8 +378,8 @@ class ISM:
     ) -> None:
         if not session:
             session = Session()
-        elif not isinstance(session, Session):
-            raise TypeError(f"Expected session to be a {Session}, not {session!r}")
+        elif not isinstance(session, (Session, RnetSession)):
+            raise TypeError(f"Expected session to be a {Session} or {RnetSession}, not {session!r}")
 
         if proxy:
             session.proxies.update({"all": proxy})
