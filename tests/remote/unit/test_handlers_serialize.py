@@ -199,6 +199,22 @@ def test_serialize_drm_widevine_minimal() -> None:
     assert info["license_url"] == "https://lic.example.com/wv"
 
 
+def test_serialize_drm_playready_pssh_without_dumps_is_omitted() -> None:
+    # pyplayready's PSSH exposes no dumps()/to_base64()/__bytes__; serialization
+    # must omit the pssh field rather than emit an object repr.
+    class _PSSH:
+        pass
+
+    class _PlayReady:
+        def __init__(self) -> None:
+            self._pssh = _PSSH()
+            self.kids = ["00112233445566778899aabbccddeeff"]
+
+    info = serialize_drm(_PlayReady())[0]
+    assert "pssh" not in info
+    assert info["kids"] == ["00112233445566778899aabbccddeeff"]
+
+
 # ---------- validate_service ----------
 
 
