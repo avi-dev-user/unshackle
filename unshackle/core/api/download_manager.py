@@ -160,19 +160,12 @@ def _perform_download(
     service: str,
     title_id: str,
     params: Dict[str, Any],
-    cancel_event: Optional[threading.Event] = None,
     progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> List[str]:
     """Execute the synchronous download logic for a job."""
 
-    def _check_cancel(stage: str):
-        if cancel_event and cancel_event.is_set():
-            raise Exception(f"Job was cancelled {stage}")
-
     from contextlib import redirect_stderr, redirect_stdout
     from io import StringIO
-
-    _check_cancel("before execution started")
 
     # Import dl.py components lazily to avoid circular deps during module import
     import click
@@ -328,8 +321,6 @@ def _perform_download(
 
     service_module = Services.load(service)
 
-    _check_cancel("before service instantiation")
-
     try:
         import inspect
 
@@ -367,29 +358,11 @@ def _perform_download(
 
     original_download_dir = config.directories.downloads
 
-    _check_cancel("before download execution")
-
     stdout_capture = StringIO()
     stderr_capture = StringIO()
 
-    # The progress_sink (dl.build_job_progress_callables) owns the percentage; status changes
-    # are emitted here.
-    if progress_callback:
-        progress_callback({"progress": 0.0, "status": "starting"})
-        original_result = dl_instance.result
-
-        def result_with_progress(*args, **kwargs):
-            try:
-                progress_callback({"status": "downloading"})
-                result = original_result(*args, **kwargs)
-                progress_callback({"progress": 100.0, "status": "completed"})
-                return result
-            except Exception as e:
-                progress_callback({"progress": 0.0, "status": "failed", "error": str(e)})
-                raise
-
-        dl_instance.result = result_with_progress
-
+    # progress_sink (dl.build_job_progress_callables) owns percentage; terminal status
+    # (success/failure) is reported by the worker's result file.
     try:
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
             dl_instance.result(

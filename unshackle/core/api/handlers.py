@@ -1442,7 +1442,6 @@ async def session_create_handler(data: Dict[str, Any], request: Optional[web.Req
                 session.auth_status = AuthStatus.FAILED
                 session.auth_error = str(e)
                 bridge.status = AuthStatus.FAILED
-                bridge.error = str(e)
 
         asyncio.create_task(_run_auth())
 

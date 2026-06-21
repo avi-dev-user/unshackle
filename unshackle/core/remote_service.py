@@ -198,7 +198,7 @@ def _build_tracks(data: Dict[str, Any]) -> Tracks:
     return tracks
 
 
-def _resolve_manifest_data(tracks: Tracks, manifests: list, session: Any) -> None:
+def _resolve_manifest_data(tracks: Tracks, manifests: list) -> None:
     """Re-parse serialized manifests and populate track.data for downloading.
 
     The server serializes DASH and ISM manifest XML as zlib-compressed base64.
@@ -604,7 +604,7 @@ class RemoteService:
         for k, v in result.get("session_cookies", {}).items():
             self._session.cookies.set(k, v)
 
-        _resolve_manifest_data(tracks, result.get("manifests", []), self._session)
+        _resolve_manifest_data(tracks, result.get("manifests", []))
 
         self._server_cdm_type = result.get("server_cdm_type", "widevine")
 

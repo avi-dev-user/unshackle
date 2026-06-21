@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from unshackle.core.api.input_bridge import AuthStatus, InputBridge
+from unshackle.core.api.input_bridge import AUTH_INPUT_TIMEOUT, AuthStatus, InputBridge
 from unshackle.core.api.sanitize import sanitize_log
 from unshackle.core.config import config
 from unshackle.core.tracks import Track
@@ -127,7 +127,7 @@ class SessionStore:
             for sid, entry in self._sessions.items():
                 elapsed = (now - entry.last_accessed).total_seconds()
                 if entry.auth_status in (AuthStatus.AUTHENTICATING, AuthStatus.PENDING_INPUT):
-                    if elapsed > 600:
+                    if elapsed > AUTH_INPUT_TIMEOUT:
                         expired.append(sid)
                 elif elapsed > self._ttl:
                     expired.append(sid)

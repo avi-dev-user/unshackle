@@ -25,8 +25,9 @@ class AuthStatus(Enum):
     FAILED = "failed"
 
 
-class BridgeCancelledError(Exception):
-    """Raised when the bridge is cancelled (client disconnected, session deleted)."""
+# Seconds the server waits for a remote client to answer an input prompt before
+# giving up; also the TTL SessionStore grants AUTHENTICATING/PENDING_INPUT sessions.
+AUTH_INPUT_TIMEOUT = 600.0
 
 
 @dataclass
@@ -40,12 +41,11 @@ class InputBridge:
     _prompt: Optional[str] = field(default=None, init=False, repr=False)
     _response: Optional[str] = field(default=None, init=False, repr=False)
     _status: AuthStatus = field(default=AuthStatus.AUTHENTICATING, init=False)
-    _error: Optional[str] = field(default=None, init=False, repr=False)
     _cancelled: bool = field(default=False, init=False, repr=False)
     _response_ready: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
-    def request_input(self, prompt: str, timeout: float = 600.0) -> str:
+    def request_input(self, prompt: str, timeout: float = AUTH_INPUT_TIMEOUT) -> str:
         """Block until the remote client submits a response for *prompt*.
 
         Args:
@@ -57,11 +57,11 @@ class InputBridge:
 
         Raises:
             TimeoutError: If no response is received within *timeout*.
-            BridgeCancelledError: If the bridge was cancelled.
+            RuntimeError: If the bridge was cancelled.
         """
         with self._lock:
             if self._cancelled:
-                raise BridgeCancelledError("Session was cancelled")
+                raise RuntimeError("Session was cancelled")
             self._prompt = prompt
             self._response = None
             self._status = AuthStatus.PENDING_INPUT
@@ -73,16 +73,15 @@ class InputBridge:
                 break
             with self._lock:
                 if self._cancelled:
-                    raise BridgeCancelledError("Session was cancelled")
+                    raise RuntimeError("Session was cancelled")
         else:
             with self._lock:
                 self._status = AuthStatus.FAILED
-                self._error = "Input request timed out waiting for client response"
             raise TimeoutError(f"No client response for prompt within {timeout}s")
 
         with self._lock:
             if self._cancelled:
-                raise BridgeCancelledError("Session was cancelled")
+                raise RuntimeError("Session was cancelled")
             response = self._response or ""
             self._prompt = None
             self._response = None
@@ -115,7 +114,6 @@ class InputBridge:
         with self._lock:
             self._cancelled = True
             self._status = AuthStatus.FAILED
-            self._error = "Session cancelled"
         self._response_ready.set()
 
     @property
@@ -127,13 +125,3 @@ class InputBridge:
     def status(self, value: AuthStatus) -> None:
         with self._lock:
             self._status = value
-
-    @property
-    def error(self) -> Optional[str]:
-        with self._lock:
-            return self._error
-
-    @error.setter
-    def error(self, value: Optional[str]) -> None:
-        with self._lock:
-            self._error = value
