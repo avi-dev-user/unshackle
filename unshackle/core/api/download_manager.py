@@ -104,6 +104,10 @@ class DownloadJob:
     completed_tracks: int = 0
     total_tracks: int = 0
     active_tracks: List[str] = field(default_factory=list)
+    # Segment counts and transfer speed of the track downloading now (granular display)
+    segments_done: float = 0.0
+    segments_total: float = 0.0
+    speed: Optional[str] = None
 
     # Subtitles skipped under skip_subtitle_errors (non-fatal). Each entry is a dl.SkippedSubtitle
     # dict (id / language / title) so a client can report which weren't available.
@@ -125,6 +129,9 @@ class DownloadJob:
             "completed_tracks": self.completed_tracks,
             "total_tracks": self.total_tracks,
             "active_tracks": self.active_tracks,
+            "segments_done": self.segments_done,
+            "segments_total": self.segments_total,
+            "speed": self.speed,
             "skipped_subtitles": self.skipped_subtitles,
         }
 
@@ -756,6 +763,14 @@ class DownloadQueueManager:
                                 job.completed_tracks = int(progress_data["completed_tracks"])
                             if "active_tracks" in progress_data:
                                 job.active_tracks = list(progress_data["active_tracks"])
+                            for _sk in ("segments_done", "segments_total"):
+                                if _sk in progress_data:
+                                    try:
+                                        setattr(job, _sk, float(progress_data[_sk]))
+                                    except (TypeError, ValueError):
+                                        pass
+                            if progress_data.get("speed"):
+                                job.speed = str(progress_data["speed"])
                             if progress_data.get("skipped_subtitles"):
                                 job.skipped_subtitles = progress_data["skipped_subtitles"]
                             if "progress" in progress_data:
