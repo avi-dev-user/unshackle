@@ -10,7 +10,6 @@ response value.
 from __future__ import annotations
 
 import threading
-import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
@@ -67,14 +66,9 @@ class InputBridge:
             self._status = AuthStatus.PENDING_INPUT
             self._response_ready.clear()
 
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if self._response_ready.wait(timeout=0.5):
-                break
-            with self._lock:
-                if self._cancelled:
-                    raise RuntimeError("Session was cancelled")
-        else:
+        # cancel() and submit_response() both .set() the event, so a single wait
+        # returns on signal-or-cancel; no poll loop needed.
+        if not self._response_ready.wait(timeout=timeout):
             with self._lock:
                 self._status = AuthStatus.FAILED
             raise TimeoutError(f"No client response for prompt within {timeout}s")

@@ -155,6 +155,13 @@ class DownloadJob:
         return result
 
 
+def to_enum(values: List[str], enum_cls: type[Enum]) -> List[Enum]:
+    """Map case-insensitive strings (by member name or value) to enum members, dropping unknowns."""
+    lookup = {m.name.upper(): m for m in enum_cls}
+    lookup.update({str(m.value).upper(): m for m in enum_cls})
+    return [lookup[v.upper()] for v in values if v.upper() in lookup]
+
+
 def _perform_download(
     job_id: str,
     service: str,
@@ -197,9 +204,7 @@ def _perform_download(
         if isinstance(vcodec_raw, str):
             vcodec_raw = [vcodec_raw]
         if isinstance(vcodec_raw, list) and vcodec_raw and not isinstance(vcodec_raw[0], Video.Codec):
-            codec_map = {c.name.upper(): c for c in Video.Codec}
-            codec_map.update({c.value.upper(): c for c in Video.Codec})
-            params["vcodec"] = [codec_map[v.upper()] for v in vcodec_raw if v.upper() in codec_map]
+            params["vcodec"] = to_enum(vcodec_raw, Video.Codec)
     else:
         params["vcodec"] = []
 
@@ -208,17 +213,14 @@ def _perform_download(
         if isinstance(range_raw, str):
             range_raw = [range_raw]
         if isinstance(range_raw, list) and range_raw and not isinstance(range_raw[0], Video.Range):
-            range_map = {r.name.upper(): r for r in Video.Range}
-            range_map.update({r.value.upper(): r for r in Video.Range})
-            params["range"] = [range_map[r.upper()] for r in range_raw if r.upper() in range_map]
+            params["range"] = to_enum(range_raw, Video.Range)
     else:
         params["range"] = [Video.Range.SDR]
 
     sub_format_raw = params.get("sub_format")
     if sub_format_raw and isinstance(sub_format_raw, str):
-        sub_map = {c.name.upper(): c for c in Subtitle.Codec}
-        sub_map.update({c.value.upper(): c for c in Subtitle.Codec})
-        params["sub_format"] = sub_map.get(sub_format_raw.upper())
+        mapped = to_enum([sub_format_raw], Subtitle.Codec)
+        params["sub_format"] = mapped[0] if mapped else None
 
     if params.get("export"):
         params["export"] = bool(params["export"])
