@@ -21,9 +21,12 @@ from unshackle.core.update_checker import UpdateChecker
 
 
 @web.middleware
-async def cors_middleware(request: web.Request, handler):
+async def cors_middleware(
+    request: web.Request, handler: Callable[[web.Request], Awaitable[web.StreamResponse]]
+) -> web.StreamResponse:
     """Add CORS headers to all responses."""
     # Handle preflight requests
+    response: web.StreamResponse
     if request.method == "OPTIONS":
         response = web.Response()
     else:
@@ -182,7 +185,14 @@ async def services(request: web.Request) -> web.Response:
         services_info = []
 
         for tag in service_tags:
-            service_data = {"tag": tag, "aliases": [], "geofence": [], "title_regex": None, "url": None, "help": None}
+            service_data: dict[str, Any] = {
+                "tag": tag,
+                "aliases": [],
+                "geofence": [],
+                "title_regex": None,
+                "url": None,
+                "help": None,
+            }
 
             try:
                 service_module = Services.load(tag)
