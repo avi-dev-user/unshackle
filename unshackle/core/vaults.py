@@ -1,3 +1,4 @@
+import inspect
 import logging
 import time
 from typing import Any, Iterator, Optional, Union
@@ -34,6 +35,9 @@ class Vaults:
         module = _MODULES.get(type_)
         if not module:
             raise ValueError(f"Unable to find vault command by the name '{type_}'.")
+        # only pass the global default to vaults that declare a timeout param (per-vault config still wins)
+        if "timeout" not in kwargs and "timeout" in inspect.signature(module).parameters:
+            kwargs["timeout"] = config.vault_timeout
         try:
             vault = module(**kwargs)
             self.vaults.append(vault)

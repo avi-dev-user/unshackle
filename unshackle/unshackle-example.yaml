@@ -394,6 +394,11 @@ remote_cdm:
 # Key Vaults store your obtained Content Encryption Keys (CEKs)
 # Use 'no_push: true' to prevent a vault from receiving pushed keys
 # while still allowing it to provide keys when requested
+
+# Global network timeout (seconds) for remote vaults (API, HTTP). Defaults to 10.
+# Override per-vault with a 'timeout:' key on that vault entry.
+# vault_timeout: 10.0
+
 key_vaults:
   - type: SQLite
     name: Local
@@ -403,6 +408,7 @@ key_vaults:
   #   name: "Remote Vault"
   #   uri: "https://key-vault.example.com"
   #   token: "secret_token"
+  #   timeout: 5.0  # overrides the global vault_timeout for this vault
   #   no_push: true  # This vault will only provide keys, not receive them
   # - type: MySQL
   #   name: "MySQL Vault"
