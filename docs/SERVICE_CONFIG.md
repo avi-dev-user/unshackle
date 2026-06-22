@@ -150,6 +150,47 @@ Please be aware that this information is sensitive and to keep it safe. Do not s
 
 ---
 
+## firefox_cookies (dict)
+
+Automatically extract cookies from your running Firefox installation instead of maintaining a
+`cookies/<SERVICE>.txt` file. Configured as a top-level dict keyed by service tag; each value is
+a settings dict for that service.
+
+```yaml
+firefox_cookies:
+  EXAMPLE:
+    hosts:
+      - example.com
+      - api.example.com
+    local_storage: false   # optional, default false
+```
+
+**Fields:**
+
+- `hosts` — list of host patterns to match against Firefox's cookie store. Each pattern must be at
+  least 3 characters. A pattern matches the exact host **and** any dot-suffix subdomain
+  (e.g. `example.com` also matches `sub.example.com` and `.example.com`).
+- `local_storage` — when `true`, also harvest `localStorage` entries for the listed hosts from
+  Firefox's `webappsstore.sqlite`. Default: `false`.
+
+At download time unshackle picks the **most recently modified** valid Firefox profile (the one
+whose `cookies.sqlite` has the latest mtime), copies the database to a restricted temporary
+directory (`0700`), and reads cookies from it without touching the live profile. If extraction
+returns no cookies or fails for any reason, it falls back silently to the normal file-based cookie
+(`cookies/<SERVICE>.txt` or `cookies/<SERVICE>/<profile>.txt`).
+
+**Notes:**
+
+- Firefox must not have an exclusive write lock on the database at the moment of extraction (i.e.
+  Firefox may be open — the extractor copies both `cookies.sqlite` and its WAL file to capture any
+  unflushed writes).
+- `local_storage: true` is only needed for services that store auth tokens in the browser's
+  localStorage rather than in HTTP cookies.
+- The feature is implemented in `core/utils/firefox_cookie_extractor.py`; the fallback logic lives
+  in `dl.get_cookie_jar` (`commands/dl.py`).
+
+---
+
 ## tmdb_api_key (str)
 
 API key for The Movie Database (TMDB). This is used for tagging downloaded files with TMDB,

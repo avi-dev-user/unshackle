@@ -178,78 +178,141 @@ remote_cdm:
       use_vaults: true              # Integrate with vault system
 ```
 
-**Advanced Example with Field Mapping:**
+**Full field reference:**
 
 ```yaml
 remote_cdm:
   - name: advanced_custom_api
     type: custom_api
     host: https://api.example.com
-    device:
-      name: L1
-      type: ANDROID
-      security_level: 1
+    timeout: 30                     # Default request timeout (seconds); overridden per-endpoint
 
-    # Authentication configuration
+    device:
+      name: L1                      # Passed as 'scheme' in base request params
+      type: ANDROID                 # CHROME, ANDROID, or PLAYREADY
+      system_id: 26830              # Widevine system ID (informational; not sent)
+      security_level: 1             # 1–3 for Widevine; 2000/3000 for PlayReady
+
+    # Authentication — applied to every request via session headers or Basic auth
     auth:
-      type: header
-      header_name: X-API-Key
-      key: YOUR_SECRET_KEY
-      custom_headers:
+      type: header                  # bearer | header | basic | body | query
+      header_name: X-API-Key        # used when type=header (default: Authorization)
+      key: YOUR_SECRET_KEY          # API key / token / password
+      # bearer_token: TOKEN         # explicit token for type=bearer (falls back to 'key')
+      # username: user              # required for type=basic
+      # password: pass              # required for type=basic
+      custom_headers:               # merged into every request
         User-Agent: Unshackle/3.1.0
         X-Client-Version: "1.0"
 
-    # Endpoint configuration
+    # Endpoints — both keys are required
     endpoints:
-      get_request:
+      get_request:                  # first call: obtain challenge or cached keys
         path: /v2/challenge
         method: POST
-        timeout: 30
-      decrypt_response:
+        timeout: 30                 # overrides top-level timeout for this endpoint
+      decrypt_response:             # second call: exchange license response for keys
         path: /v2/decrypt
         method: POST
         timeout: 30
 
-    # Request parameter mapping
+    # request_mapping — transform outgoing parameters before each request
+    # Base params sent to get_request:  scheme, init_data, [service], [service_certificate]
+    # Base params sent to decrypt_response: scheme, session_id, init_data, license_request, license_response
     request_mapping:
       get_request:
-        param_names:
-          init_data: pssh           # Rename 'init_data' to 'pssh'
-          scheme: device_type       # Rename 'scheme' to 'device_type'
-        static_params:
-          api_version: "2.0"        # Add static parameter
+        param_names:                # rename base param keys
+          init_data: pssh
+          scheme: device_type
+        static_params:              # always-added fixed values
+          api_version: "2.0"
+        conditional_params:         # added only when condition is true
+          - condition: "is_playready == True"
+            params:
+              drm_type: playready
+        transforms:                 # applied after renaming; type values listed below
+          - param: pssh
+            type: base64_encode
+        nested_params:              # group named params under a parent key
+          payload:
+            - pssh
+            - device_type
+        exclude_params:             # remove unwanted params before sending
+          - service_certificate
       decrypt_response:
         param_names:
           license_request: challenge
           license_response: license
 
-    # Response field mapping
+    # response_mapping — extract and validate fields from API responses
     response_mapping:
       get_request:
-        fields:
-          challenge: data.challenge # Deep field access
+        fields:                     # map standard names to dot-path locations in response JSON
+          challenge: data.challenge
           session_id: session.id
-        success_conditions:
-          - status == 'ok'          # Validate response
+          message: status.message
+        response_types:             # classify response so CDM can choose the right path
+          - condition: "message_type == 'license-request'"
+            type: license_request   # CDM expects challenge + session_id
+          - condition: "message_type == 'cached-keys'"
+            type: cached_keys       # CDM skips license round-trip
+        success_conditions:         # all must be true; failure raises RequestException
+          - "message == 'success'"
+        error_fields:               # inspected when success_conditions fail (default: error, message, details)
+          - error
+          - details
+        transforms:                 # applied to extracted fields
+          - field: challenge
+            type: base64_decode
       decrypt_response:
         fields:
           keys: data.keys
-        key_fields:
-          kid: key_id               # Map 'kid' field
-          key: content_key          # Map 'key' field
+          message: status.message
+        key_fields:                 # map key-object property names to standard names
+          kid: key_id               # default: kid
+          key: content_key          # default: key
+          type: key_type            # default: type (value used as-is; CONTENT treated as content key)
+        success_conditions:
+          - "message == 'success'"
 
+    # caching — vault and API-level key caching
     caching:
-      enabled: true
-      use_vaults: true
-      check_cached_first: true      # Check cache before API calls
+      enabled: true                 # master switch (default: true)
+      use_vaults: true              # check/write unshackle key vaults (default: true)
+      check_cached_first: true      # check vaults before making any API call (default: true)
 ```
 
-**Supported Authentication Types:**
-- `bearer` - Bearer token authentication
-- `header` - Custom header authentication
-- `basic` - HTTP Basic authentication
-- `body` - Credentials in request body
-- `query` - Authentication added to query string parameters
+**Supported `transforms` types** (for both `request_mapping` and `response_mapping`):
+`base64_encode`, `base64_decode`, `hex_encode`, `hex_decode`, `json_stringify`, `json_parse`, `parse_key_string`
+
+**Supported authentication types:**
+- `bearer` — `Authorization: Bearer <key>` (or `bearer_token` field)
+- `header` — arbitrary header; set `header_name` (default `Authorization`)
+- `basic` — HTTP Basic auth via `username` / `password`
+- `body` — credentials injected into request body (handled by request_mapping)
+- `query` — credentials appended to query string (handled by request_mapping)
+
+### PyPlayReady Remote CDM
+
+Connects to a running `unshackle serve` instance for PlayReady licensing. Uses
+`pyplayready.remote.remotecdm.RemoteCdm` under the hood. No `type` field is needed —
+the entry is routed to PlayReady when `device_type: PLAYREADY` is set (same branching
+logic as the legacy Widevine path).
+
+```yaml
+remote_cdm:
+  - name: playready_remote
+    device_name: my_prd_device      # Device name registered on the serve instance
+    device_type: PLAYREADY          # Required to select the PlayReady code path
+    system_id: 0                    # Not used by pyplayready RemoteCdm; set to 0
+    security_level: 3000            # 2000 = SL2000, 3000 = SL3000
+    host: http://127.0.0.1:8786/playready  # Must include the /playready path suffix
+    secret: your-api-secret-key     # X-Secret-Key sent to the serve instance
+```
+
+**Note:** The `/playready` path suffix in `host` is required — `pyplayready.RemoteCdm`
+appends its own endpoint paths on top of this base, so omitting the suffix will result
+in 404 errors.
 
 ### Legacy PyWidevine Serve Format
 
