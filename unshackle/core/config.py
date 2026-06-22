@@ -75,6 +75,7 @@ class Config:
         self.audio: dict = kwargs.get("audio") or {}
         self.headers: dict = kwargs.get("headers") or {}
         self.key_vaults: list[dict[str, Any]] = kwargs.get("key_vaults", [])
+        self.vault_timeout: float = kwargs.get("vault_timeout", 10.0)
         self.muxing: dict = kwargs.get("muxing") or {}
         self.proxy_providers: dict = kwargs.get("proxy_providers") or {}
         self.remote_services: dict = kwargs.get("remote_services") or {}
