@@ -393,6 +393,16 @@ Additional behavior:
 
 - `no_push` (bool): Optional per-vault flag. When `true`, the vault will not receive pushed keys (writes) but
   will still be queried and can provide keys for lookups. Useful for read-only/backup vaults.
+- `timeout` (float): Optional per-vault network timeout in seconds for the remote `API` and `HTTP` vaults.
+  Defaults to the global `vault_timeout` (10 seconds) so an unreachable vault host fails fast instead of
+  hanging the download. Set it on a vault to override the global, e.g. `timeout: 5.0`. Has no effect on
+  SQLite (local) or MySQL (uses its driver's own connect timeout).
+
+Set a global default for all remote vaults at the top level of the config:
+
+```yaml
+vault_timeout: 10.0   # seconds; per-vault `timeout:` overrides this
+```
 
 ### Using an API Vault
 
@@ -407,6 +417,7 @@ not work in unshackle. The API format can be seen in the [API Vault Code](unshac
   # uri: "https://api.example.com/key-vault"
   token: "random secret key" # authorization token
   # no_push: true            # optional; make this API vault read-only (lookups only)
+  # timeout: 5.0             # optional; per-vault network timeout (seconds), overrides vault_timeout
 ```
 
 ### Using a MySQL Vault
@@ -470,6 +481,7 @@ is useful for integrating with various third-party key vault APIs.
   api_mode: "json"              # query, json, or decrypt_labs
   # username: "user"            # required for query mode only
   # no_push: false              # optional; defaults to false
+  # timeout: 5.0                # optional; per-vault network timeout (seconds), overrides vault_timeout
 ```
 
 **Supported API Modes:**
