@@ -2,7 +2,7 @@
 
 This document covers subtitle processing and formatting options under the top-level `subtitle:` key in `unshackle.yaml`.
 
-For the canonical example, see `unshackle/unshackle-example.yaml`.
+This document is the canonical reference for subtitle configuration. `unshackle/unshackle-example.yaml` is a minimal starter only.
 
 ## subtitle (dict)
 

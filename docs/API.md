@@ -93,6 +93,31 @@ serve:
 
 Layering order: built-in defaults < `serve.*` overrides < service-specific click defaults < request body.
 
+### Per-request override gates
+
+Two security gates under `serve:` guard capabilities that `/api/download` clients can request. Both default OFF; an unset or `false` value causes the server to reject the request with `403 FORBIDDEN`.
+
+**`cdm_overrides`** — a `/api/download` job body may include a `cdm` field to select a specific server-side device. When this gate is off, every such request is rejected. Set to `true` to allow any device the server has, or to a list of device names to restrict to an explicit subset:
+
+```yaml
+serve:
+  # Allow any server-side device:
+  cdm_overrides: true
+
+  # Or restrict to specific devices:
+  cdm_overrides:
+    - generic_nexus_4464_l3
+```
+
+**`allow_job_credentials`** — a `/api/download` job body may include a `credential` (single) or `credentials` (map) field to authenticate the job with client-supplied secrets instead of the server's configured credentials. When this gate is off, any job containing either field is rejected. Each distinct credential gets its own isolated token cache on the server. Set to `true` to allow:
+
+```yaml
+serve:
+  allow_job_credentials: true
+```
+
+Both gates are independent and can be combined. A typical locked-down deployment leaves both unset; a trusted single-client deployment might enable both.
+
 ---
 
 ## Endpoint Map
@@ -779,3 +804,70 @@ downloading -> cancelled
 Jobs are retained for 24 hours after completion (override via top-level `download_job_retention_hours` in `unshackle.yaml`). The server runs up to 2 concurrent download jobs by default; override via top-level `max_concurrent_downloads`. This is independent of `serve.downloads`, which controls parallel tracks **within** a single job.
 
 Remote sessions are managed by `SessionStore` (`unshackle/core/api/session_store.py`); idle sessions and their `InputBridge` instances are cleaned up by a background loop started/stopped with the app lifecycle.
+
+---
+
+## Client Configuration: `remote_services`
+
+`remote_services` is a top-level block in `unshackle.yaml` on the **client** machine. It tells `dl` how to reach a remote `unshackle serve` instance instead of running service code locally. The client handles track selection, download, decrypt, and mux; the server handles auth, manifest parsing, and (optionally) DRM licensing.
+
+### CLI flags
+
+| Flag | Description |
+| --- | --- |
+| `--remote` | Use a remote server instead of local service code. Reads `remote_services` from config. |
+| `--server <name>` | Select a named server when multiple are configured. If only one entry exists it is picked automatically. |
+
+```bash
+unshackle dl --remote EXAMPLE1 "https://example.com/show/abc123"
+unshackle dl --remote --server us-server EXAMPLE1 "https://example.com/show/abc123"
+```
+
+### Config structure
+
+```yaml
+remote_services:
+  my-server:
+    url: "http://192.168.1.100:8786"   # base URL of the remote serve instance
+    api_key: "your-secret-key-here"    # sent as X-Secret-Key; omit or set "" for --no-key servers
+
+    # server_cdm: the server runs its own CDM and returns KID:KEY pairs (mode: server_cdm).
+    # false (default): client runs its own CDM; license challenges are proxied through the server.
+    server_cdm: false
+
+    # Per-service overrides applied on the client side after the remote session is set up.
+    # Supported keys: decryption, downloader, cdm (and any free-form service config keys).
+    services:
+      EXAMPLE1:
+        decryption: mp4decrypt   # override decryption tool for this service (shaka or mp4decrypt)
+```
+
+**`server_cdm`** — when `false` (default) the client builds CDM challenges locally and calls `POST /api/session/{id}/license` with `mode: "proxy"`; the server forwards the challenge to the service's license endpoint and returns raw license bytes. When `true` the client skips local CDM setup and calls with `mode: "server_cdm"`; the server performs the full CDM flow and returns `{ "keys": { "<KID>": "<KEY>" } }`. The server-side user key must have a matching device configured (`devices` / `playready_devices`) for `server_cdm` to work.
+
+### Multiple servers
+
+When more than one server is configured, `--server <name>` is required:
+
+```yaml
+remote_services:
+  us-server:
+    url: "https://us.example.com:8786"
+    api_key: "us-key"
+    server_cdm: true
+    services:
+      EXAMPLE1:
+        decryption: mp4decrypt
+
+  eu-server:
+    url: "https://eu.example.com:8786"
+    api_key: "eu-key"
+    server_cdm: false
+```
+
+```bash
+unshackle dl --remote --server us-server EXAMPLE1 "https://example.com/show/abc123"
+```
+
+### Cache forwarding
+
+On session open the client sends any local `*.json` cache files for the service (tokens, etc.) to the server so it can skip interactive re-auth. On session close the server returns updated cache files; the client writes them back locally so the next remote session can forward them again.

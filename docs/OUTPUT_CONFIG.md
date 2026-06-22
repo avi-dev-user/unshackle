@@ -32,15 +32,65 @@ filenames:
 
 ## output_template (dict)
 
-Configure custom output filename templates for movies, series, and songs.
+Configure custom output filename templates for movies, series, songs, and albums.
 This is **required** in your `unshackle.yaml` — a warning is shown if not configured.
 
-Available variables: `{title}`, `{year}`, `{season}`, `{episode}`, `{season_episode}`, `{episode_name}`,
-`{quality}`, `{resolution}`, `{source}`, `{audio}`, `{audio_channels}`, `{audio_full}`,
-`{video}`, `{hdr}`, `{hfr}`, `{atmos}`, `{dual}`, `{multi}`, `{tag}`, `{edition}`, `{repack}`,
-`{lang_tag}`, `{track_number}`, `{artist}`, `{album}`, `{disc}`
-
 Add `?` suffix to make a variable conditional (omitted when empty): `{year?}`, `{hdr?}`, `{repack?}`
+
+### General variables
+
+| Variable | Meaning |
+|---|---|
+| `title` | Title of the movie, episode, or track |
+| `year` | Release year |
+| `source` | Service source tag (e.g. `AMZN`, `NF`) |
+| `tag` | Group/release tag configured via `tag:` |
+| `edition` | Edition label (e.g. `Extended`, `Theatrical`) |
+| `repack` | `REPACK` when the release is a repack, otherwise empty |
+| `lang_tag` | Language tag produced by `language_tags` rules (e.g. `NORDiC`) |
+
+### Series / episode variables
+
+| Variable | Meaning |
+|---|---|
+| `season` | Season number (e.g. `1`) |
+| `episode` | Episode number (e.g. `1`) |
+| `season_episode` | Combined season/episode (e.g. `S01E01`) |
+| `episode_name` | Episode title |
+
+### Video / audio variables
+
+| Variable | Meaning |
+|---|---|
+| `quality` | Resolution label (e.g. `1080p`, `2160p`) |
+| `resolution` | Raw resolution string |
+| `video` | Video codec label (e.g. `H.264`, `H.265`) |
+| `hdr` | HDR format label (e.g. `HDR`, `DV`) |
+| `hfr` | HFR label when frame rate exceeds normal threshold |
+| `audio` | Audio codec label (e.g. `AAC`, `EAC3`) |
+| `audio_channels` | Channel count (e.g. `2.0`, `5.1`) |
+| `audio_full` | Combined codec + channels (e.g. `DDP5.1`) |
+| `atmos` | `Atmos` when Dolby Atmos is present, otherwise empty |
+| `dual` | `DUAL` when two audio languages are present, otherwise empty |
+| `multi` | `MULTi` when three or more audio languages are present, otherwise empty |
+
+### Music variables
+
+| Variable | Meaning |
+|---|---|
+| `track_number` | Track number within album |
+| `disc` | Disc number |
+| `track_total` | Total tracks on disc |
+| `disc_total` | Total discs in release |
+| `artist` | Track artist |
+| `album_artist` | Album-level artist (may differ from track artist) |
+| `album` | Album title |
+| `release_type` | Release type (e.g. `Album`, `Single`, `EP`) |
+| `genre` | Genre string |
+| `explicit` | `Explicit` when track has explicit content flag, otherwise empty |
+| `isrc` | International Standard Recording Code |
+| `upc` | Universal Product Code (album barcode) |
+| `label` | Record label name |
 
 ```yaml
 output_template:
@@ -71,7 +121,9 @@ If not configured, the default folder naming is used:
 - Songs: `Artist - Album (Year)`
 
 `folder` accepts either a single string (applies to all title kinds) or a mapping with per-kind
-templates keyed by `movies`, `series`, and/or `songs`. Unknown keys are warned about and ignored.
+templates keyed by `movies`, `series`, `songs`, and/or `albums`. Unknown keys are warned about and ignored.
+
+Useful music variables for album folders: `album_artist`, `album`, `artist`, `year`, `genre`, `label`, `release_type`, `track_total`, `disc_total`.
 
 ```yaml
 output_template:
@@ -90,6 +142,7 @@ output_template:
   #   movies: '{title} ({year})'
   #   series: '{title} ({year?})'
   #   songs: '{artist} - {album} ({year?})'
+  #   albums: '{album_artist} - {album} ({year?})'
 ```
 
 Example outputs:
