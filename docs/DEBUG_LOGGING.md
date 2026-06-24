@@ -52,6 +52,9 @@ Route binary calls through the helpers in `unshackle.core.utils.subprocess`:
   dirs: install root → `<unshackle>`, venv → `<venv>`, home → `~`). `key` fields are also redacted
   unless `config.debug_keys`. Pass user data via `context=`/`request=`/kwargs so it is sanitized.
   Net effect: a shared JSONL leaks no account URLs, machine paths, or usernames.
+  Set `redact_paths: false` in `unshackle.yaml` to show full absolute paths instead of `<unshackle>`/
+  `<venv>`/`~` tokens (config-only, no CLI flag). Affects `redact_path` everywhere it is used —
+  the debug log and the service load-summary detail. Secret/URL redaction is unaffected.
 - **Service calls are intentionally not logged** (no per-request POST/GET to services). Manifest
   parsing (`manifest_*_parse`) is the seam for request-level visibility.
 

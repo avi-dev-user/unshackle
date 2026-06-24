@@ -96,6 +96,7 @@ def check() -> None:
         },
         {"name": "Caddy", "binary": binaries.Caddy, "required": False, "desc": "Web server", "cat": "Network"},
         {"name": "Docker", "binary": binaries.Docker, "required": False, "desc": "Gluetun VPN", "cat": "Network"},
+        {"name": "git", "binary": binaries.Git, "required": False, "desc": "Service repos", "cat": "Network"},
     ]
 
     # Track overall status

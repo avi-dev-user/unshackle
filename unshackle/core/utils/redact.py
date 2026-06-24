@@ -77,13 +77,23 @@ def _path_bases() -> list[tuple[str, str]]:
 _PATH_BASES = _path_bases()
 
 
+def _path_redaction_enabled() -> bool:
+    """Path-prefix redaction is on unless ``config.redact_paths`` is explicitly False."""
+    try:
+        from unshackle.core.config import config  # lazy: config doesn't import redact, so no cycle
+
+        return bool(getattr(config, "redact_paths", True))
+    except (ImportError, AttributeError):
+        return True
+
+
 def redact_path(text: Optional[str]) -> Optional[str]:
     """Replace local base-directory prefixes (install root, venv, home) in ``text`` with tokens.
 
     Idempotent and cheap; only touches strings that actually contain a known base dir, so URLs
-    and relative paths pass through unchanged.
+    and relative paths pass through unchanged. Disabled by ``config.redact_paths: false``.
     """
-    if not isinstance(text, str) or not text:
+    if not isinstance(text, str) or not text or not _path_redaction_enabled():
         return text
     for base, token in _PATH_BASES:
         if base in text:

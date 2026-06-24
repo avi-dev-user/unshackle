@@ -8,6 +8,7 @@ from typing import Any, Optional
 import yaml
 from appdirs import AppDirs
 
+from unshackle.core.service_repo import is_repo_spec
 from unshackle.core.utils.collections import ci_get
 
 
@@ -68,7 +69,8 @@ class Config:
                 # these must not be modified by the user
                 continue
             if name == "services" and isinstance(path, list):
-                setattr(self.directories, name, [Path(p).expanduser() for p in path])
+                # repo specs (git URLs / owner-repo) stay raw strings; resolved lazily in services.py
+                setattr(self.directories, name, [p if is_repo_spec(p) else Path(p).expanduser() for p in path])
             else:
                 setattr(self.directories, name, Path(path).expanduser())
 
@@ -111,6 +113,8 @@ class Config:
         self.ipinfo_api_key: str = kwargs.get("ipinfo_api_key") or ""
         self.update_checks: bool = kwargs.get("update_checks", True)
         self.update_check_interval: int = kwargs.get("update_check_interval", 24)
+        # mask local base dirs (install root/venv/home) in logged paths; False shows full paths
+        self.redact_paths: bool = kwargs.get("redact_paths", True)
 
         self.language_tags: dict = kwargs.get("language_tags") or {}
         self.output_template: dict = kwargs.get("output_template") or {}
