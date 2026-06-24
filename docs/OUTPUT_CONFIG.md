@@ -343,6 +343,7 @@ The following directories are available and may be overridden,
 Notes:
 
 - `services` accepts either a single directory or a list of directories to search for service modules.
+  Entries may also be **git repo specs** to load service packs hosted in a repo (see below).
 
 For example,
 
@@ -353,5 +354,65 @@ directories:
 ```
 
 There are directories not listed that cannot be modified as they are crucial to the operation of unshackle.
+
+### Loading services from a git repo
+
+A `services` entry may be a git repo instead of a local path, letting you host service packs on
+GitHub or any git host (GitLab, Gitea, self-hosted). Local paths and repo specs can be mixed:
+
+```yaml
+directories:
+  services:
+    - https://github.com/you/your-services         # https repo (highest priority — listed first)
+    - git@gitlab.com:you/your-services.git         # ssh repo (private, via your git auth)
+    - you/your-services@main                        # owner/repo shorthand + optional @branch
+    - ~/my-local-services                          # local path (fallback — listed last)
+```
+
+How it works:
+
+- On first use the repo is cloned (shallow) to `<your-services-dir>/_repos/<repo-name>/` — the first
+  local `services` entry, or the bundled `unshackle/services` if you configured none. **Nothing is
+  written to the `cache` directory.**
+- After that, unshackle does **not** hit the network on every run. It re-pulls at most once every 24h,
+  or immediately when you run `unshackle util refresh-services`.
+- Requires `git` on your PATH. Private repos use your existing git credential helper — unshackle
+  stores no tokens. Git use is **read-only on the remote** — only `clone`, `fetch`, `pull`, and a
+  local `reset` are run; nothing is ever pushed.
+- **Local edits and refresh.** You can edit a clone under `_repos/` directly. The two refresh paths
+  treat your edits differently:
+  - *Automatic* (the 24h TTL during a normal `dl`/`search` run): if the clone has uncommitted
+    changes to tracked files or unpushed local commits, unshackle **refuses to refresh and exits**,
+    naming the clone, so a background pull never clobbers work in progress. Commit and push it
+    upstream (or revert), then it refreshes normally.
+  - *Manual* (`unshackle util refresh-services`): an explicit "get upstream's latest" — it
+    **hard-resets the clone to upstream, discarding local changes**. Run it only when you want to
+    throw away local edits.
+  - Untracked files (new service folders, `__pycache__`) never block the automatic path — a
+    fast-forward pull doesn't touch them.
+- The repo's **top level** must contain `<TAG>/__init__.py` service dirs (same layout as
+  `unshackle/services/`).
+- **Priority is list order.** The first source to define a tag is the one that loads; if a later
+  source (repo or local) has the same tag, that copy is treated as a duplicate and ignored. So list
+  the sources you trust most first — e.g. repos first and local last to make local a fallback, or
+  local first to let your local tweaks override a repo.
+- **What you see on load.** A one-line summary is logged each run, e.g.:
+
+  ```
+  Loaded 103 services (36 duplicate(s) ignored)
+  ```
+
+  The full per-duplicate detail is logged only at debug verbosity (`unshackle -d ...`), one line per
+  duplicate, naming the path that loaded and the path that was ignored:
+
+  ```
+  EXAMPLE: using <unshackle>/services/EXAMPLE/__init__.py, ignoring duplicate <unshackle>/services/_repos/your-repo/EXAMPLE/__init__.py
+  ```
+
+  Paths are shortened to `<unshackle>`/`<venv>`/`~` tokens; set `redact_paths: false` to show full
+  absolute paths (see [Debug Logging](DEBUG_LOGGING.md)).
+
+If `<your-services-dir>` is inside the installed package, a reinstall may remove the clones; they are
+simply re-cloned on next use. On read-only installs, point `services` at a writable path.
 
 ---

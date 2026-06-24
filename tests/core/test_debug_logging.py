@@ -261,6 +261,19 @@ def test_redact_path_leaves_relative_paths_untouched():
     assert redact_path("temp/Audio.mp4") == "temp/Audio.mp4"
 
 
+def test_redact_path_disabled_by_config(monkeypatch):
+    # config.redact_paths: false shows full paths verbatim
+    from unshackle.core.config import config
+    from unshackle.core.utils import redact as redact_mod
+
+    root = str(Path(redact_mod.__file__).resolve().parents[3])
+    full = f"{root}/temp/Audio.mp4"
+    monkeypatch.setattr(config, "redact_paths", False, raising=False)
+    assert redact_path(full) == full
+    monkeypatch.setattr(config, "redact_paths", True, raising=False)
+    assert redact_path(full) == "<unshackle>/temp/Audio.mp4"
+
+
 # ---------- redact_all + output_dir integration ----------
 
 

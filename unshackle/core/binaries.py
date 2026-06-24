@@ -57,6 +57,7 @@ HDR10PlusTool = find("hdr10plus_tool", "HDR10Plus_tool")
 Mp4decrypt = find("mp4decrypt")
 Docker = find("docker")
 ML_Worker = find("ML-Worker")
+Git = find("git")
 
 
 __all__ = (
@@ -76,5 +77,6 @@ __all__ = (
     "Mp4decrypt",
     "Docker",
     "ML_Worker",
+    "Git",
     "find",
 )
