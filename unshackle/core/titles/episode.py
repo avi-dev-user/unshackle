@@ -110,7 +110,7 @@ class Episode(Title):
 
                 separators = re.sub(r"\{[^}]*\}", "", template)
                 spacer = "." if "." in separators and " " not in separators else " "
-                return sanitize_filename(folder_name, spacer)
+                return "/".join(sanitize_filename(p, spacer) for p in folder_name.split("/") if p)
 
             series_template = config.output_template.get("series")
             if series_template:
@@ -160,7 +160,7 @@ class Series(SortedKeyList, ABC):
         sum(seasons.values())
         season_breakdown = ", ".join(f"S{season}({count})" for season, count in sorted(seasons.items()))
         tree = Tree(
-            f"{num_seasons} season{'s'[:num_seasons^1]}, {season_breakdown}",
+            f"{num_seasons} season{'s'[: num_seasons ^ 1]}, {season_breakdown}",
             guide_style="bright_black",
         )
         if verbose:
