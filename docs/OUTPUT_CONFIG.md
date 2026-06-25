@@ -33,7 +33,7 @@ filenames:
 ## output_template (dict)
 
 Configure custom output filename templates for movies, series, songs, and albums.
-This is **required** in your `unshackle.yaml` — a warning is shown if not configured.
+This is **required** in your `unshackle.yaml` - a warning is shown if not configured.
 
 Add `?` suffix to make a variable conditional (omitted when empty): `{year?}`, `{hdr?}`, `{repack?}`
 
@@ -123,6 +123,15 @@ If not configured, the default folder naming is used:
 `folder` accepts either a single string (applies to all title kinds) or a mapping with per-kind
 templates keyed by `movies`, `series`, `songs`, and/or `albums`. Unknown keys are warned about and ignored.
 
+Use `/` in a folder template to create nested directories - each segment is sanitized
+independently and joined as real path separators. For example `'{source}/Series/{title}.{year?}'`
+produces `EXAMPLE/Series/The.Show.2024/`. Note `{source}` is the service **tag** (e.g. `EXAMPLE`,
+`EXAMPLE2`), not the display name; it is blank when `--no-source` is used.
+
+Movies only get their own folder when a `movies` folder template is set; without one the movie file
+is written directly into the downloads directory (unchanged default behaviour). Series and songs
+always get a folder unless `--no-folder` is passed.
+
 Useful music variables for album folders: `album_artist`, `album`, `artist`, `year`, `genre`, `label`, `release_type`, `track_total`, `disc_total`.
 
 ```yaml
@@ -143,11 +152,18 @@ output_template:
   #   series: '{title} ({year?})'
   #   songs: '{artist} - {album} ({year?})'
   #   albums: '{album_artist} - {album} ({year?})'
+
+  # Nested per-service layout (EXAMPLE/Series/Title.Year/...)
+  # folder:
+  #   series: '{source}/Series/{title}.{year?}'
+  #   movies: '{source}/Movies/{title}.{year?}'
+  #   songs:  '{source}/Music/{album_artist}/{album}.{year?}'
 ```
 
 Example outputs:
 - Scene folder: `Example.Show.2024.S01.1080p.EXAMPLE.WEB-DL.DDP5.1.H.264-TAG/`
 - Plex folder: `Example Show (2024)/`
+- Nested folder: `EXAMPLE/Series/Example.Show.2024/`
 
 ---
 
@@ -278,7 +294,7 @@ Enable/disable tagging downloaded files with IMDB/TMDB/TVDB identifiers (when av
   Override which track is flagged as the default in the muxed MKV, regardless
   of the title's original language. Useful when you always want your player to
   open on a specific language (e.g. always default to Polish audio even on
-  English originals). Only affects the MKV `--default-track` flag — track
+  English originals). Only affects the MKV `--default-track` flag - track
   selection (`-l`, `--alang`, etc.) is unchanged. All keys are optional; each
   track type falls back to its previous default rule when the configured
   language isn't present in the manifest.
@@ -363,21 +379,21 @@ GitHub or any git host (GitLab, Gitea, self-hosted). Local paths and repo specs 
 ```yaml
 directories:
   services:
-    - https://github.com/you/your-services         # https repo (highest priority — listed first)
+    - https://github.com/you/your-services         # https repo (highest priority - listed first)
     - git@gitlab.com:you/your-services.git         # ssh repo (private, via your git auth)
     - you/your-services@main                        # owner/repo shorthand + optional @branch
-    - ~/my-local-services                          # local path (fallback — listed last)
+    - ~/my-local-services                          # local path (fallback - listed last)
 ```
 
 How it works:
 
-- On first use the repo is cloned (shallow) to `<your-services-dir>/_repos/<repo-name>/` — the first
+- On first use the repo is cloned (shallow) to `<your-services-dir>/_repos/<repo-name>/` - the first
   local `services` entry, or the bundled `unshackle/services` if you configured none. **Nothing is
   written to the `cache` directory.**
 - After that, unshackle does **not** hit the network on every run. It re-pulls at most once every 24h,
   or immediately when you run `unshackle util refresh-services`.
-- Requires `git` on your PATH. Private repos use your existing git credential helper — unshackle
-  stores no tokens. Git use is **read-only on the remote** — only `clone`, `fetch`, `pull`, and a
+- Requires `git` on your PATH. Private repos use your existing git credential helper - unshackle
+  stores no tokens. Git use is **read-only on the remote** - only `clone`, `fetch`, `pull`, and a
   local `reset` are run; nothing is ever pushed.
 - **Local edits and refresh.** You can edit a clone under `_repos/` directly. The two refresh paths
   treat your edits differently:
@@ -385,16 +401,16 @@ How it works:
     changes to tracked files or unpushed local commits, unshackle **refuses to refresh and exits**,
     naming the clone, so a background pull never clobbers work in progress. Commit and push it
     upstream (or revert), then it refreshes normally.
-  - *Manual* (`unshackle util refresh-services`): an explicit "get upstream's latest" — it
+  - *Manual* (`unshackle util refresh-services`): an explicit "get upstream's latest" - it
     **hard-resets the clone to upstream, discarding local changes**. Run it only when you want to
     throw away local edits.
-  - Untracked files (new service folders, `__pycache__`) never block the automatic path — a
+  - Untracked files (new service folders, `__pycache__`) never block the automatic path - a
     fast-forward pull doesn't touch them.
 - The repo's **top level** must contain `<TAG>/__init__.py` service dirs (same layout as
   `unshackle/services/`).
 - **Priority is list order.** The first source to define a tag is the one that loads; if a later
   source (repo or local) has the same tag, that copy is treated as a duplicate and ignored. So list
-  the sources you trust most first — e.g. repos first and local last to make local a fallback, or
+  the sources you trust most first - e.g. repos first and local last to make local a fallback, or
   local first to let your local tweaks override a repo.
 - **What you see on load.** A one-line summary is logged each run, e.g.:
 

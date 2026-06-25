@@ -1422,8 +1422,8 @@ class dl:
                         titles.year = enrich_year
 
         music_mode = isinstance(titles, Music)
-        music_collection_mode = isinstance(titles, list) and bool(titles) and all(
-            isinstance(title, Music) for title in titles
+        music_collection_mode = (
+            isinstance(titles, list) and bool(titles) and all(isinstance(title, Music) for title in titles)
         )
         music_titles = list(titles) if music_collection_mode else ([titles] if music_mode else [])
         music_plans = {}
@@ -1558,13 +1558,10 @@ class dl:
             and not no_audio
         )
         if music_group_download:
+
             def download_music_title(titles: Music, plan: Any) -> bool:
                 music_items: list[tuple[Song, Audio, Callable[..., None]]] = []
-                music_song_plans = {
-                    id(song_plan.song): song_plan
-                    for disc in plan.discs
-                    for song_plan in disc.songs
-                }
+                music_song_plans = {id(song_plan.song): song_plan for disc in plan.discs for song_plan in disc.songs}
                 music_renderer = MusicRenderer()
                 music_start_time = time.time()
 
@@ -1624,7 +1621,9 @@ class dl:
                         for language in audio_languages:
                             if language == "orig":
                                 if song.language:
-                                    orig_lang = str(song.language) if hasattr(song.language, "__str__") else song.language
+                                    orig_lang = (
+                                        str(song.language) if hasattr(song.language, "__str__") else song.language
+                                    )
                                     if orig_lang not in processed_lang:
                                         processed_lang.append(orig_lang)
                                 else:
@@ -1866,7 +1865,9 @@ class dl:
                         if not final_path:
                             continue
                         integrity_result = integrity_results.get(id(track))
-                        metadata_result = metadata_results.get(id(track), MusicMetadataResult(skipped=True, reason="not processed"))
+                        metadata_result = metadata_results.get(
+                            id(track), MusicMetadataResult(skipped=True, reason="not processed")
+                        )
                         manifest_records.append(
                             {
                                 "track_number": song.track,
@@ -1949,7 +1950,9 @@ class dl:
                             "install mutagen to write music tags",
                         )
                         console.print(Padding(f"Metadata skipped: {reason}", (0, 5)))
-                    console.print(Padding(f"{release_label} downloaded in [progress.elapsed]{album_time}[/]!", (0, 5, 1, 5)))
+                    console.print(
+                        Padding(f"{release_label} downloaded in [progress.elapsed]{album_time}[/]!", (0, 5, 1, 5))
+                    )
 
                 return True
 
@@ -1982,9 +1985,7 @@ class dl:
                 continue
 
             title_rule = (
-                f"Track {title.track:02}: {title.name}"
-                if music_mode and isinstance(title, Song)
-                else str(title)
+                f"Track {title.track:02}: {title.name}" if music_mode and isinstance(title, Song) else str(title)
             )
             console.print(Padding(Rule(f"[rule.text]{title_rule}"), (1, 2)))
             temp_font_files = []
@@ -3273,7 +3274,14 @@ class dl:
                                     base_filename = str(title)
 
                                 sidecar_dir = self.output_dir or config.directories.downloads
-                                if not no_folder and isinstance(title, (Episode, Song)) and media_info:
+                                if (
+                                    not no_folder
+                                    and media_info
+                                    and (
+                                        isinstance(title, (Episode, Song))
+                                        or (isinstance(title, Movie) and config.get_folder_template("movies"))
+                                    )
+                                ):
                                     sidecar_dir /= title.get_filename(
                                         media_info, show_service=not no_source, folder=True
                                     )
@@ -3327,7 +3335,10 @@ class dl:
                 if no_mux:
                     # Handle individual track files without muxing
                     final_dir = self.output_dir or config.directories.downloads
-                    if not no_folder and isinstance(title, (Episode, Song)):
+                    if not no_folder and (
+                        isinstance(title, (Episode, Song))
+                        or (isinstance(title, Movie) and config.get_folder_template("movies"))
+                    ):
                         # Create folder based on title
                         # Use first available track for filename generation
                         sample_track = (
@@ -3384,7 +3395,10 @@ class dl:
                         final_filename = title.get_filename(media_info, show_service=not no_source)
                         audio_codec_suffix = muxed_audio_codecs.get(muxed_path)
 
-                        if not no_folder and isinstance(title, (Episode, Song)):
+                        if not no_folder and (
+                            isinstance(title, (Episode, Song))
+                            or (isinstance(title, Movie) and config.get_folder_template("movies"))
+                        ):
                             final_dir /= title.get_filename(media_info, show_service=not no_source, folder=True)
 
                         final_dir.mkdir(parents=True, exist_ok=True)
@@ -4159,6 +4173,7 @@ class dl:
         if ff_settings:
             try:
                 from unshackle.core.utils.firefox_cookie_extractor import get_firefox_cookies
+
                 extracted_jar = get_firefox_cookies(ff_settings)
                 if extracted_jar:
                     return extracted_jar

@@ -103,7 +103,7 @@ class Song(Title):
 
                 separators = re.sub(r"\{[^}]*\}", "", template)
                 spacer = "." if "." in separators and " " not in separators else " "
-                return sanitize_filename(folder_name, spacer)
+                return "/".join(sanitize_filename(p, spacer) for p in folder_name.split("/") if p)
             name = f"{self.artist} - {self.album}"
             if self.year:
                 name += f" ({self.year})"
