@@ -55,6 +55,43 @@ You can even set a specific server number this way, e.g., `--proxy nordvpn:gb236
 
 Note that `gb` is used instead of `uk` to be more consistent across regional systems.
 
+### protonvpn (dict)
+
+Enable Proton VPN as a proxy provider. Proton mints short-lived HTTPS proxy credentials per session, so
+authentication reuses an exported `account.proton.me` browser session rather than static credentials.
+
+Export the cookies for `account.proton.me` (Netscape `cookies.txt` or a JSON cookie list) — they must include
+the `AUTH-<UID>` and `REFRESH-<UID>` cookies — and save them at `<cookies>/vpn/protonvpn.txt`. **No yaml is
+required**: the provider auto-loads when that file exists. Exporting straight from the logged-in web page is
+fine; cookies for other Proton apps (e.g. `mail.proton.me`) are ignored automatically. The session refreshes on
+its own when the access token expires, so you only re-export if it is fully revoked. **Free Proton accounts
+work**, limited to the free-tier exit countries.
+
+Configuration is optional — only add a block to override defaults:
+
+```yaml
+proxy_providers:
+  protonvpn:
+    cookie_path: /path/to/protonvpn.txt  # optional; defaults to <cookies>/vpn/protonvpn.txt
+    server_map:
+      stream-us: us:ny  # optional alias -> country / country:city / countryNN
+```
+
+Query formats (after the provider prefix). City uses the NordVPN-style colon, like `nordvpn:us:seattle`:
+
+- `--proxy protonvpn:us` — random server in the country (the chosen server name is logged)
+- `--proxy protonvpn:us:ny` / `protonvpn:ca:vancouver` — by city (name or initials)
+- `--proxy protonvpn:de203` — pin Proton server **#203** (the number shown in the log, e.g. `DE#203`)
+
+Use `uk` (Proton's code for the United Kingdom); `gb` is accepted and mapped to `uk` automatically. Proton's
+server numbers are not sequential (a country may have `#203`, `#813`, …), so pick the number from a previous
+run's log line rather than guessing.
+
+Selection only offers servers your plan can use (paid accounts are detected automatically) and **prefers paid
+servers over the free pool**, falling back to free only when no paid server is available — a pinned `#NN` always
+wins. **Tor and Secure Core servers are excluded** (both are slow for a plain proxy). Secure Core servers use
+port 443, all others 4443 — handled automatically.
+
 ### surfsharkvpn (dict)
 
 Enable Surfshark VPN proxy service using Surfshark Service credentials (not your login password).
