@@ -186,7 +186,7 @@ def info() -> None:
         # Handle both single Path objects and lists of Path objects
         if isinstance(attr_value, list):
             # For lists, show each path on a separate line
-            paths_str = "\n".join(str(path.resolve()) for path in attr_value)
+            paths_str = "\n".join(str(p.resolve()) if isinstance(p, Path) else str(p) for p in attr_value)
             table.add_row(name.title(), paths_str)
         else:
             # For single Path objects, use the original logic
