@@ -16,7 +16,7 @@ from unshackle.core import binaries
 from unshackle.core.config import config
 from unshackle.core.console import console
 from unshackle.core.constants import context_settings
-from unshackle.core.proxies import Basic, ExpressVPN, Gluetun, Hola, NordVPN, SurfsharkVPN, WindscribeVPN
+from unshackle.core.proxies import Basic, ExpressVPN, Gluetun, Hola, NordVPN, ProtonVPN, SurfsharkVPN, WindscribeVPN
 from unshackle.core.service import Service
 from unshackle.core.services import Services
 from unshackle.core.utils.click_types import ContextData
@@ -67,10 +67,14 @@ def search(ctx: click.Context, no_proxy: bool, profile: Optional[str] = None, pr
         with console.status("Loading Proxy Providers...", spinner="dots"):
             if config.proxy_providers.get("basic"):
                 proxy_providers.append(Basic(**config.proxy_providers["basic"]))
-            if config.proxy_providers.get("expressvpn"):
-                proxy_providers.append(ExpressVPN(**config.proxy_providers["expressvpn"]))
+            expressvpn = ExpressVPN(**(config.proxy_providers.get("expressvpn") or {}))
+            if config.proxy_providers.get("expressvpn") or expressvpn.cookie_path.is_file():
+                proxy_providers.append(expressvpn)
             if config.proxy_providers.get("nordvpn"):
                 proxy_providers.append(NordVPN(**config.proxy_providers["nordvpn"]))
+            proton = ProtonVPN(**(config.proxy_providers.get("protonvpn") or {}))
+            if config.proxy_providers.get("protonvpn") or proton.cookie_path.is_file():
+                proxy_providers.append(proton)
             if config.proxy_providers.get("surfsharkvpn"):
                 proxy_providers.append(SurfsharkVPN(**config.proxy_providers["surfsharkvpn"]))
             if config.proxy_providers.get("windscribevpn"):

@@ -50,7 +50,7 @@ from unshackle.core.drm import DRM_T, ClearKeyCENC, MonaLisa, PlayReady, Widevin
 from unshackle.core.events import events
 from unshackle.core.music import (MusicAudioIntegrityError, MusicMetadataResult, MusicPlanner, MusicRenderer,
                                   file_md5, verify_music_audio, write_music_manifest, write_music_metadata)
-from unshackle.core.proxies import Basic, ExpressVPN, Gluetun, Hola, NordVPN, SurfsharkVPN, WindscribeVPN
+from unshackle.core.proxies import Basic, ExpressVPN, Gluetun, Hola, NordVPN, ProtonVPN, SurfsharkVPN, WindscribeVPN
 from unshackle.core.service import Service
 from unshackle.core.services import Services
 from unshackle.core.title_cacher import get_account_hash
@@ -1039,10 +1039,15 @@ class dl:
             with console.status("Loading Proxy Providers...", spinner="dots"):
                 if config.proxy_providers.get("basic"):
                     self.proxy_providers.append(Basic(**config.proxy_providers["basic"]))
-                if config.proxy_providers.get("expressvpn"):
-                    self.proxy_providers.append(ExpressVPN(**config.proxy_providers["expressvpn"]))
+                # ExpressVPN/ProtonVPN auto-load when their default cookie file exists (no yaml needed)
+                expressvpn = ExpressVPN(**(config.proxy_providers.get("expressvpn") or {}))
+                if config.proxy_providers.get("expressvpn") or expressvpn.cookie_path.is_file():
+                    self.proxy_providers.append(expressvpn)
                 if config.proxy_providers.get("nordvpn"):
                     self.proxy_providers.append(NordVPN(**config.proxy_providers["nordvpn"]))
+                proton = ProtonVPN(**(config.proxy_providers.get("protonvpn") or {}))
+                if config.proxy_providers.get("protonvpn") or proton.cookie_path.is_file():
+                    self.proxy_providers.append(proton)
                 if config.proxy_providers.get("surfsharkvpn"):
                     self.proxy_providers.append(SurfsharkVPN(**config.proxy_providers["surfsharkvpn"]))
                 if config.proxy_providers.get("windscribevpn"):
@@ -1059,9 +1064,10 @@ class dl:
                 if re.match(r"^[a-z]+:.+$", proxy, re.IGNORECASE):
                     # requesting proxy from a specific proxy provider
                     requested_provider, proxy = proxy.split(":", maxsplit=1)
-                # Match simple region codes (us, ca, uk1) or provider:region format (nordvpn:ca, windscribe:us)
-                if re.match(r"^[a-z]{2}(?:[-][a-z0-9]+)*(?:\d+)?$", proxy, re.IGNORECASE) or re.match(
-                    r"^[a-z]+:[a-z]{2}(?:[-][a-z0-9]+)*(?:\d+)?$", proxy, re.IGNORECASE
+                # Match simple region codes (us, ca, uk1, us:ny) or provider:region (nordvpn:ca, protonvpn:us:ny).
+                # ':' is allowed as a city separator (e.g. nordvpn:us:seattle, protonvpn:de:berlin).
+                if re.match(r"^[a-z]{2}(?:[-:][a-z0-9]+)*(?:\d+)?$", proxy, re.IGNORECASE) or re.match(
+                    r"^[a-z]+:[a-z]{2}(?:[-:][a-z0-9]+)*(?:\d+)?$", proxy, re.IGNORECASE
                 ):
                     proxy = proxy.lower()
                     # Preserve the original user query (region code) for service-specific proxy_map overrides.
