@@ -355,21 +355,32 @@ class DASH:
 
         if period_count > 1:
             log.debug(f"Multi-period manifest detected with {period_count} content periods")
+            # Keep only the longest (main content) period. Services that wrap the main
+            # content in short ident/bumper periods give each period its own init segment;
+            # muxing one period's media under another period's init mis-times the output
+            # (video PTS stretch). Restricting to the single main period keeps init and
+            # media consistent and yields correct timing. It is also more correct than the
+            # prior behaviour, which matched the track by id and so could download whichever
+            # period the track happened to originate from (e.g. a 3s bumper) instead of the
+            # actual episode.
+            main_period = max(content_periods, key=DASH._period_duration_seconds)
+            log.debug(
+                f"Using main content period '{main_period.get('id')}' "
+                f"({DASH._period_duration_seconds(main_period):.0f}s)"
+            )
+            content_periods = [main_period]
+            period_count = 1
 
         for period_idx, content_period in enumerate(content_periods):
-            # Find the matching representation in this period
-            matched_rep = None
-            matched_as = None
-            for as_ in content_period.findall("AdaptationSet"):
-                if DASH.is_trick_mode(as_):
-                    continue
-                for rep in as_.findall("Representation"):
-                    if rep.get("id") == rep_id:
-                        matched_rep = rep
-                        matched_as = as_
-                        break
-                if matched_rep is not None:
-                    break
+            # Find the matching representation in this period. Match by id first, then
+            # by characteristics, so multi-period manifests that reuse a different
+            # Representation id per period are not truncated to the origin period.
+            matched_as, matched_rep = DASH._match_representation_in_period(
+                content_period,
+                rep_id=rep_id,
+                adaptation_set=adaptation_set,
+                representation=representation,
+            )
 
             if matched_rep is None or matched_as is None:
                 period_id = content_period.get("id", period_idx)
@@ -947,7 +958,107 @@ class DASH:
             (x.get("schemeIdUri"), x.get("value"))
             in (("urn:mpeg:dash:role:2011", "descriptive"), ("urn:tva:metadata:cs:AudioPurposeCS:2007", "1"))
             for x in adaptation_set.findall("Accessibility")
+        ) or any(
+            x.get("schemeIdUri") == "urn:mpeg:dash:role:2011" and x.get("value") in ("description", "descriptive")
+            for x in adaptation_set.findall("Role")
         )
+
+    @staticmethod
+    def _period_duration_seconds(period: Element) -> float:
+        """Parse an ISO 8601 Period@duration (e.g. ``PT21M42.000S``) into seconds."""
+        duration = period.get("duration") or ""
+        seconds = 0.0
+        for value, unit in re.findall(r"(\d+\.?\d*)([HMS])", duration):
+            seconds += float(value) * {"H": 3600, "M": 60, "S": 1}[unit]
+        return seconds
+
+    @staticmethod
+    def _match_representation_in_period(
+        period: Element,
+        *,
+        rep_id: Optional[str],
+        adaptation_set: Element,
+        representation: Element,
+    ) -> tuple[Optional[Element], Optional[Element]]:
+        """
+        Find the Representation in ``period`` that corresponds to a wanted track.
+
+        A service may give the same logical track a different Representation id in
+        each Period of a multi-period manifest, so matching on id alone finds the
+        track only in its origin Period and silently truncates the download to that
+        one Period. When the id is absent, fall back to matching by content type,
+        language, codec and descriptive role, then pick the rung with the closest
+        bandwidth (rungs are far enough apart that the nearest one is the right one
+        even when per-period bandwidths differ slightly).
+
+        Returns the matching (AdaptationSet, Representation), or (None, None).
+        """
+
+        def content_type(as_el: Element, rep_el: Optional[Element] = None) -> Optional[str]:
+            ct = (rep_el.get("contentType") if rep_el is not None else None) or as_el.get("contentType")
+            if not ct:
+                mime = (rep_el.get("mimeType") if rep_el is not None else None) or as_el.get("mimeType")
+                ct = mime.split("/")[0] if mime else None
+            return ct
+
+        # An exact Representation id match wins when the service keeps ids stable.
+        for as_el in period.findall("AdaptationSet"):
+            if DASH.is_trick_mode(as_el):
+                continue
+            for rep_el in as_el.findall("Representation"):
+                if rep_el.get("id") == rep_id:
+                    return as_el, rep_el
+
+        def height(rep_el: Element, as_el: Element) -> int:
+            for el in (rep_el, as_el):
+                try:
+                    h = int(el.get("height") or 0)
+                except ValueError:
+                    h = 0
+                if h:
+                    return h
+            return 0
+
+        want_ct = content_type(adaptation_set, representation)
+        want_lang = adaptation_set.get("lang") or representation.get("lang")
+        want_codecs = representation.get("codecs") or adaptation_set.get("codecs")
+        want_descriptive = DASH.is_descriptive(adaptation_set)
+        want_height = height(representation, adaptation_set)
+        try:
+            want_bandwidth = int(representation.get("bandwidth") or 0)
+        except ValueError:
+            want_bandwidth = 0
+
+        best: Optional[tuple[int, Element, Element]] = None
+        for as_el in period.findall("AdaptationSet"):
+            if DASH.is_trick_mode(as_el):
+                continue
+            if DASH.is_descriptive(as_el) != want_descriptive:
+                continue
+            as_lang = as_el.get("lang")
+            for rep_el in as_el.findall("Representation"):
+                if want_ct and content_type(as_el, rep_el) not in (None, want_ct):
+                    continue
+                if want_lang and (rep_el.get("lang") or as_lang) not in (None, want_lang):
+                    continue
+                rep_codecs = rep_el.get("codecs") or as_el.get("codecs")
+                if want_codecs and rep_codecs and rep_codecs != want_codecs:
+                    continue
+                # For video the resolution must match: bandwidths drift between periods, so a
+                # closest-bandwidth match alone can land on the wrong rung (pull 720p when 1080p
+                # was wanted). Height is stable across periods.
+                if want_height and height(rep_el, as_el) != want_height:
+                    continue
+                try:
+                    bw = int(rep_el.get("bandwidth") or 0)
+                except ValueError:
+                    bw = 0
+                score = abs(bw - want_bandwidth)
+                if best is None or score < best[0]:
+                    best = (score, as_el, rep_el)
+        if best is not None:
+            return best[1], best[2]
+        return None, None
 
     @staticmethod
     def is_forced(adaptation_set: Element) -> bool:
