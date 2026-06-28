@@ -433,6 +433,35 @@ class Video(Track):
         if not vui:
             return False
 
+        # Skip the rewrite when the bitstream VUI already matches the target — avoids a full
+        # bitstream pass on services that already ship correct colour metadata
+        expected = {
+            Video.Range.HDR10: ("bt2020", "smpte2084", "bt2020nc"),
+            Video.Range.HDR10P: ("bt2020", "smpte2084", "bt2020nc"),
+            Video.Range.HLG: ("bt2020", "arib-std-b67", "bt2020nc"),
+        }.get(self.range)
+        if expected and binaries.FFProbe:
+            probe = subprocess.run(
+                [
+                    binaries.FFProbe,
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=color_primaries,color_transfer,color_space",
+                    "-of",
+                    "default=noprint_wrappers=1",
+                    str(self.path),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            vals = dict(line.split("=", 1) for line in probe.stdout.splitlines() if "=" in line)
+            current = (vals.get("color_primaries"), vals.get("color_transfer"), vals.get("color_space"))
+            if current == expected:
+                return False
+
         if not binaries.FFMPEG:
             raise EnvironmentError('FFmpeg executable "ffmpeg" was not found but is required for this call.')
 
