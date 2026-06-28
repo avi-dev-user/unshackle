@@ -1296,6 +1296,8 @@ class dl:
         else:
             vaults_only = not cdm_only
 
+        config.decryption = resolve_decryption(config.decryption_map, config.decryption, service.__class__.__name__.upper())
+
         log_event(
             "drm_mode_config",
             level="DEBUG",
@@ -1304,6 +1306,7 @@ class dl:
                 "cdm_only": cdm_only,
                 "vaults_only": vaults_only,
                 "mode": "CDM only" if cdm_only else ("Vaults only" if vaults_only else "Both CDM and Vaults"),
+                "decryption": config.decryption,
             },
         )
 
