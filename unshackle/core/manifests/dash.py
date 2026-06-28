@@ -928,6 +928,9 @@ class DASH:
             (x.get("schemeIdUri"), x.get("value"))
             in (("urn:mpeg:dash:role:2011", "descriptive"), ("urn:tva:metadata:cs:AudioPurposeCS:2007", "1"))
             for x in adaptation_set.findall("Accessibility")
+        ) or any(
+            x.get("schemeIdUri") == "urn:mpeg:dash:role:2011" and x.get("value") in ("description", "descriptive")
+            for x in adaptation_set.findall("Role")
         )
 
     @staticmethod
