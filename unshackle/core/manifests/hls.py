@@ -744,7 +744,8 @@ class HLS:
                     if include_map_data and map_data and map_data[1]:
                         x.write(map_data[1])
                     for file in via:
-                        x.write(file.read_bytes())
+                        with open(file, "rb") as segment:
+                            shutil.copyfileobj(segment, x, 1024 * 1024)
                         x.flush()
                         if delete:
                             file.unlink()
@@ -1005,8 +1006,8 @@ class HLS:
             else:
                 with open(save_path, "wb") as f:
                     for discontinuity_file in segments_to_merge:
-                        discontinuity_data = discontinuity_file.read_bytes()
-                        f.write(discontinuity_data)
+                        with open(discontinuity_file, "rb") as src:
+                            shutil.copyfileobj(src, f, 1024 * 1024)
                         f.flush()
                         os.fsync(f.fileno())
                         discontinuity_file.unlink()
