@@ -740,8 +740,15 @@ class HLS:
                     delete: Delete the file once it's been merged.
                     include_map_data: Whether to include the init map data.
                 """
+                prepend = include_map_data and map_data and map_data[1]
+                if len(via) == 1 and not prepend and delete:
+                    try:
+                        os.replace(via[0], to)
+                        return
+                    except OSError:
+                        pass
                 with open(to, "wb") as x:
-                    if include_map_data and map_data and map_data[1]:
+                    if prepend:
                         x.write(map_data[1])
                     for file in via:
                         with open(file, "rb") as segment:
