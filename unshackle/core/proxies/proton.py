@@ -5,12 +5,16 @@ import logging
 import os
 import random
 import re
+import sys
+import time
 from pathlib import Path
 from typing import Optional
 
 import requests
+from rich.text import Text
 
 from unshackle.core.config import config
+from unshackle.core.console import console
 from unshackle.core.proxies.proxy import Proxy
 
 log = logging.getLogger("proxies.proton")
@@ -20,8 +24,9 @@ class ProtonVPN(Proxy):
     """
     Proton VPN HTTPS proxy provider.
 
-    Reuses an exported account.proton.me session (the AUTH-<UID>/REFRESH-<UID> cookies) to call
-    the VPN API, resolves a server by country/city, mints short-lived proxy credentials, and
+    Authenticates via TV login (a self-sustaining session cached at <cache>/vpn/protonvpn.json, the
+    only refreshable kind) or an exported account.proton.me cookie session (AUTH-<UID>, access only —
+    re-export on expiry). Resolves a server by country/city, mints short-lived proxy credentials, and
     returns an authenticated HTTPS proxy URL (https://user:pass@server:4443).
 
     Query format (after the provider prefix, e.g. "protonvpn:us"):
@@ -33,6 +38,7 @@ class ProtonVPN(Proxy):
     """
 
     API_BASE = "https://account.proton.me/api"
+    API_HOSTS = ("account.proton.me", "account.protonvpn.com")
     APP_VERSION = "browser-vpn@1.3.5"
     PROXY_PORT = 4443
     SECURE_CORE_PORT = 443
@@ -42,15 +48,25 @@ class ProtonVPN(Proxy):
     TOKEN_DURATION = 1200  # free tier caps the granted lifetime lower
     COUNTRY_ALIASES = {"gb": "uk"}  # Proton labels the United Kingdom "UK", not the ISO "GB"
 
+    TV_API_BASE = "https://vpn-api.proton.me"
+    TV_APP_VERSION = "android_tv-vpn@5.18.75.1+play"
+    TV_USER_AGENT = "ProtonVPN/5.18.75.1 (Android 11; NVIDIA SHIELD Android TV)"
+    TV_ACCEPT = "application/vnd.protonmail.v1+json"
+    POLL_TIMEOUT = 600.0
+    POLL_INTERVAL = 5.0
+
     def __init__(
         self,
         server_map: Optional[dict[str, str]] = None,
         cookie_path: Optional[str] = None,
         cache_path: Optional[str] = None,
         timeout: float = 10.0,
+        enable: bool = False,
     ):
         self.server_map = {str(k).lower().strip(): str(v).lower().strip() for k, v in (server_map or {}).items()}
         self.timeout = timeout
+        self.enable = enable
+        self.api_base = self.API_BASE
 
         self.uid: Optional[str] = None
         self.access_token: Optional[str] = None
@@ -66,7 +82,11 @@ class ProtonVPN(Proxy):
 
     def __repr__(self) -> str:
         try:
-            servers = self.get_logicals()  # eager so the "Loaded ProtonVPN: …" line shows the catalog size
+            # only fetch the catalog if a session exists; never start TV login here (that belongs in get_proxy)
+            if self.access_token or self.cookie_path.is_file() or self.cache_path.is_file():
+                servers = self.get_logicals()
+            else:
+                servers = self.logicals or []
         except Exception:
             servers = self.logicals or []
         if not servers:
@@ -77,6 +97,7 @@ class ProtonVPN(Proxy):
         )
 
     def get_proxy(self, query: str) -> Optional[str]:
+        self.ensure_session()
         server = self.resolve_server(query.strip().lower())
         if not server:
             return None
@@ -195,15 +216,22 @@ class ProtonVPN(Proxy):
         if not self.access_token:
             self.load_session()
         if not self.access_token:
-            log.error("Proton: no session available; export account.proton.me cookies to %s", self.cookie_path)
+            log.error(
+                "Proton: no session available; export account.proton.me cookies to %s "
+                "or set proxy_providers.protonvpn.enable: true for the one-time TV login",
+                self.cookie_path,
+            )
             return None
 
         for attempt in range(2):
-            response = requests.request(method, f"{self.API_BASE}{path}", headers=self.headers(), timeout=self.timeout)
+            response = requests.request(method, f"{self.api_base}{path}", headers=self.headers(), timeout=self.timeout)
             if response.status_code == 401 and attempt == 0 and self.refresh_session():
                 continue
             if response.status_code == 401:
-                log.error("Proton: session expired; re-export account.proton.me cookies to %s", self.cookie_path)
+                log.error(
+                    "Proton: session expired; re-export cookies to %s or use TV login",
+                    self.cookie_path,
+                )
                 return None
             if not response.ok:
                 raise ValueError(f"Proton request failed with HTTP {response.status_code}: {path}")
@@ -222,7 +250,7 @@ class ProtonVPN(Proxy):
         if not self.refresh_token or not self.uid:
             return False
         response = requests.post(
-            f"{self.API_BASE}/auth/refresh",
+            f"{self.api_base}/auth/refresh",
             json={
                 "UID": self.uid,
                 "ResponseType": "token",
@@ -245,34 +273,95 @@ class ProtonVPN(Proxy):
     def load_session(self) -> None:
         cached = self.load_cache()
 
-        api_host = self.API_BASE.split("://", 1)[-1].split("/", 1)[0]
-        cookie_uid = cookie_access = cookie_refresh = None
+        cookie_uid = cookie_access = cookie_host = None
         for name, value, domain in self.load_cookies():
-            if domain and domain.lstrip(".") != api_host:
+            host = domain.lstrip(".") if domain else ""
+            if host and host not in self.API_HOSTS:
                 continue
             if name.startswith("AUTH-"):
-                cookie_uid, cookie_access = name[len("AUTH-") :], value
-            elif name.startswith("REFRESH-"):
-                cookie_refresh = value
+                cookie_uid, cookie_access, cookie_host = name[len("AUTH-") :], value, host
 
-        # Cached tokens win, but only for the same account and not older than a re-exported cookie file
-        same_account = cookie_uid is None or cached.get("uid") == cookie_uid
+        # The TV cache is the only refreshable session
         cookie_newer = (
             self.cookie_path.is_file()
             and self.cache_path.is_file()
             and self.cookie_path.stat().st_mtime > self.cache_path.stat().st_mtime
         )
-        if cached.get("access_token") and same_account and not cookie_newer:
+        if cached.get("access_token") and not cookie_newer:
             self.uid = cached["uid"]
             self.access_token = cached["access_token"]
             self.refresh_token = cached.get("refresh_token")
+            self.api_base = cached.get("api_base") or self.api_base
             return
 
-        self.uid, self.access_token = cookie_uid, cookie_access
-        # A cookie-only re-export may lack REFRESH-; reuse the cache's refresh token if it's the same account
-        self.refresh_token = cookie_refresh or (cached.get("refresh_token") if same_account else None)
-        if self.uid and self.access_token:
-            self.save_session()
+        # Cookie session: access token only. Browser sessions can't refresh headlessly
+        self.uid, self.access_token, self.refresh_token = cookie_uid, cookie_access, None
+        if cookie_host:
+            self.api_base = f"https://{cookie_host}/api"
+
+    def ensure_session(self) -> None:
+        if not self.access_token:
+            self.load_session()
+        if not self.access_token and self.enable and sys.stdin.isatty():
+            self.tv_login()
+
+    def tv_login(self) -> bool:
+        """Fork a TV session and have the user approve the code at proton.me/tv; tokens refresh like the cookie path."""
+        headers = {
+            "x-pm-appversion": self.TV_APP_VERSION,
+            "x-pm-locale": "en",
+            "User-Agent": self.TV_USER_AGENT,
+            "Accept": self.TV_ACCEPT,
+        }
+        try:
+            response = requests.get(f"{self.TV_API_BASE}/auth/v4/sessions/forks", headers=headers, timeout=self.timeout)
+            response.raise_for_status()
+            fork = response.json()
+        except (requests.RequestException, ValueError) as error:
+            log.error("Proton: failed to start TV login: %s", error)
+            return False
+
+        selector, user_code = fork.get("Selector"), fork.get("UserCode")
+        if not selector or not user_code:
+            log.error("Proton: unexpected TV login response")
+            return False
+
+        indent = " " * 5
+        prompt = (
+            "Proton: open https://account.proton.me/vpn/tv/code\n"
+            f"Enter code {user_code}, then press Enter to continue..."
+        )
+        try:
+            console.input(Text(indent + prompt.replace("\n", "\n" + indent), style="text"))
+        except EOFError:
+            return False
+
+        poll_url = f"{self.TV_API_BASE}/auth/v4/sessions/forks/{selector}"
+        deadline = time.monotonic() + self.POLL_TIMEOUT
+        while time.monotonic() < deadline:
+            response = requests.get(poll_url, headers=headers, timeout=self.timeout)
+            if response.status_code == 422:  # not approved yet
+                time.sleep(self.POLL_INTERVAL)
+                continue
+            if not response.ok:
+                log.error("Proton: TV login poll failed with HTTP %s", response.status_code)
+                return False
+            try:
+                tokens = response.json()
+            except ValueError:
+                log.error("Proton: unexpected TV login token response")
+                return False
+            uid, access, refresh = tokens.get("UID"), tokens.get("AccessToken"), tokens.get("RefreshToken")
+            if uid and access and refresh:
+                self.uid, self.access_token, self.refresh_token = uid, access, refresh
+                self.save_session()
+                log.info("Proton: TV login successful")
+                return True
+            log.error("Proton: TV login response missing tokens")
+            return False
+
+        log.error("Proton: TV login not approved in time; run the command again to retry")
+        return False
 
     def load_cookies(self) -> list[tuple[str, str, str]]:
         """Return [(name, value, domain), ...] from a Netscape cookies.txt or JSON cookie list."""
@@ -315,7 +404,12 @@ class ProtonVPN(Proxy):
         return data if isinstance(data, dict) else {}
 
     def save_session(self) -> None:
-        tokens = {"uid": self.uid, "access_token": self.access_token, "refresh_token": self.refresh_token}
+        tokens = {
+            "uid": self.uid,
+            "access_token": self.access_token,
+            "refresh_token": self.refresh_token,
+            "api_base": self.api_base,
+        }
         try:
             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
             write_private(self.cache_path, json.dumps({k: v for k, v in tokens.items() if v}, indent=2))
@@ -331,7 +425,7 @@ class ProtonVPN(Proxy):
         return cookies_dir / "vpn" / "protonvpn.txt"
 
     def default_cache_path(self) -> Path:
-        return Path(config.directories.cache) / "global" / "proton_tokens.json"
+        return Path(config.directories.cache) / "vpn" / "protonvpn.json"
 
 
 def slugify(value: str) -> str:
