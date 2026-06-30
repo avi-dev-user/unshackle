@@ -10,8 +10,7 @@
 
 <p align="center">
   <a href="#install">Install</a> &nbsp;·&nbsp;
-  <a href="https://github.com/unshackle-dl/unshackle/wiki">Wiki</a> &nbsp;·&nbsp;
-  <a href="docs/">Docs</a> &nbsp;·&nbsp;
+  <a href="https://docs.unshackle.dev">Docs</a> &nbsp;·&nbsp;
   <a href="https://discord.gg/mHYyPaCbFK">Discord</a>
 </p>
 
