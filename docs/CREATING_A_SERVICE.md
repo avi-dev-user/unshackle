@@ -32,7 +32,7 @@ download - your methods are the hooks, the framework drives the loop:
 unshackle dl TAG <title>
   └─ cli(ctx, title=...)            → constructs TAG(ctx, ...)
        └─ __init__ → super().__init__(ctx)   builds session/cache/track_request, resolves geofence proxy
-  1. authenticate(cookies, credential)        login / token exchange (skipped if not overridden)
+  1. authenticate(cookies, credential)        login / token exchange (always called; base just loads cookies/credential)
   2. get_titles()                              → Movies / Series / Album   (wrapped by get_titles_cached + title_map)
      · framework applies episode/season filters
   3. per title:
@@ -47,8 +47,9 @@ Two things follow from this order:
 - **`get_tracks()` runs before any track selection**, so it must return *everything*; the framework
   filters afterward in step (c).
 - **The license callbacks** (`get_widevine_license` etc.) fire in step (d), long after
-  `get_tracks()` returned - they only receive `title` and `track`, so anything they need (license
-  URL, session token) must be stashed during `get_tracks()`.
+  `get_tracks()` returned - they only receive `challenge`, `title`, and `track` (nothing else from
+  `get_tracks()`), so anything they need (license URL, session token) must be stashed during
+  `get_tracks()`.
 
 ## Class docstring and class variables
 
@@ -94,7 +95,7 @@ Class variables, all optional except where noted:
 | `GEOFENCE: tuple[str, ...]` | ISO country codes required; the framework warns/auto-proxies on mismatch |
 | `TITLE_RE: str` | Regex with named groups (e.g. `(?P<title_id>...)`) used in `get_titles()` to accept either a full URL or a bare ID |
 | `NO_SUBTITLES: bool` | Convention checked via `hasattr` by `dl.py`, not declared on the base class - set `True` if the service has no subtitle tracks, to skip subtitle handling |
-| `VAULT_TAG: str` | Store/read keys under a different vault namespace than this service's own tag - lets sibling services (e.g. regional variants of the same backend) share one key vault |
+| `VAULT_TAG: Optional[str]` | Store/read keys under a different vault namespace than this service's own tag - lets sibling services (e.g. regional variants of the same backend) share one key vault |
 | `AUTH_METHODS: tuple[str, ...]` | Declares which of `"cookies"`/`"credentials"` the service accepts. Optional - when unset, `unshackle serve`'s `/services` endpoint infers it by inspecting `authenticate()`'s source. Set it explicitly if that inference would guess wrong |
 
 See [Service Integration & Authentication](SERVICE_CONFIG.md#service-class-conventions) for the
@@ -118,9 +119,10 @@ def cli(ctx: click.Context, **kwargs: Any) -> EXAMPLE:
     return EXAMPLE(ctx, **kwargs)
 ```
 
-`name="EXAMPLE"` in `@click.command` must match the class/directory name exactly - this is what
-makes `unshackle dl EXAMPLE ...` resolve. `help=__doc__` reuses the class docstring above as the
-`--help` text. Add `@click.option` entries here for anything a user should be able to toggle per
+Keep `name="EXAMPLE"` in `@click.command` matching the class/directory name - resolution of
+`unshackle dl EXAMPLE ...` is actually driven by the directory name matching the class name (see
+File layout above), but a mismatched `name=` produces confusing `--help`/usage output.
+`help=__doc__` reuses the class docstring above as the `--help` text. Add `@click.option` entries here for anything a user should be able to toggle per
 download (device/client profile, movie-vs-series disambiguation, region, etc.) - they arrive as
 keyword arguments into `__init__`.
 
@@ -162,8 +164,9 @@ Order matters here:
 1. Store CLI args **before** `super().__init__(ctx)` only if base-class init needs them; otherwise
    it doesn't matter, but storing first is the convention every service follows.
 2. `super().__init__(ctx)` wires up `self.config`, `self.log`, `self.session`, `self.cache`,
-   `self.title_cache`, `self.request_input`, `self.current_region`, and builds
-   `self.track_request` from the global `dl` flags. Nothing below this line works without it.
+   `self.title_cache`, `self.current_region`, and builds `self.track_request` from the global `dl`
+   flags. Nothing below this line works without it. (`self.request_input` is a base-class method,
+   always available - it isn't assigned here.)
 3. After that, inspect `ctx.obj.cdm` and classify it with `is_playready_cdm`/`is_widevine_cdm`
    (`unshackle.core.cdm.detect`) - never hand-roll `isinstance` checks, these helpers also handle
    remote/wrapper CDMs.
@@ -230,8 +233,9 @@ Skip this method entirely for services that need no auth at all. Otherwise:
   by whatever varies per session (device, profile, or `credential.sha1`) so multiple profiles
   don't collide.
 - Use `self.request_input(prompt)` instead of bare `input()` for anything interactive (OTP, 2FA
-  codes) - locally it falls through to `input()`, but under `serve` the attached `InputBridge`
-  relays the prompt to the remote client instead of hanging the server.
+  codes) - locally it prompts via the shared Rich console (`console.input`, so the prompt renders
+  correctly alongside progress/log output), but under `serve` the attached `InputBridge` relays the
+  prompt to the remote client instead of hanging the server.
 - Raise `EnvironmentError` if auth is required but neither cookies nor a credential were given.
 - Don't hold onto the raw `Credential` object past this method - store the derived token instead.
 
@@ -368,22 +372,22 @@ def get_chapters(self, title: Title_T) -> Chapters:
     return Chapters(chapters)
 ```
 
-Return `Chapters()` (or `[]`) if the service has no chapter data — don't skip implementing the
+Return `Chapters()` (or `[]`) if the service has no chapter data - don't skip implementing the
 method. Timestamps accept float seconds, int milliseconds, or `"HH:MM:SS.mmm"` strings. Prefer
 descriptive names ("Intro", "End Credits") over generic ones ("Chapter 01").
 
-**The opening chapter at `00:00:00.000` is created for you — never add your own.** The moment you
+**The opening chapter at `00:00:00.000` is created for you - never add your own.** The moment you
 add the first `Chapter`, `Chapters.add()` injects a `Chapter(0)` at the start if one isn't already
 present, so every file gets an opening chapter automatically. Two consequences you must handle:
 
-- **Don't add a "Chapter 1" at timestamp 0 yourself** — it's redundant with the auto-inserted one.
+- **Don't add a "Chapter 1" at timestamp 0 yourself** - it's redundant with the auto-inserted one.
 - **Guard against duplicate timestamps.** `Chapters.add()` raises `ValueError` if a chapter already
   exists at that exact timestamp, so a marker the API reports at `0` (an intro/recap that starts at
   the very beginning) collides with the auto-inserted opening chapter, and two markers at the same
   time collide with each other. Skip any marker at `0` and de-duplicate timestamps before adding,
   as the `seen` set above does.
 
-A `Chapter` with no `name` is valid — it inserts an unnamed chapter break at that timestamp, which
+A `Chapter` with no `name` is valid - it inserts an unnamed chapter break at that timestamp, which
 is the standard way to close out a named range (e.g. mark the end of an "Intro" so the next chapter
 boundary lands there).
 
