@@ -1,6 +1,6 @@
 site_name: unshackle
 site_description: Configuration reference for unshackle
-site_url: https://unshackle-dl.github.io/unshackle/
+site_url: https://docs.unshackle.dev/
 repo_url: https://github.com/unshackle-dl/unshackle
 docs_dir: docs
 
