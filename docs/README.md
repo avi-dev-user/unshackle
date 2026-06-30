@@ -1,11 +1,12 @@
 # unshackle Documentation
 
-This is the **canonical configuration reference** for unshackle. `unshackle/unshackle-example.yaml` is a minimal starter config only — it intentionally omits most options. Come here for the full picture.
+This is the **canonical configuration reference** for unshackle. `unshackle/unshackle-example.yaml` is a minimal starter config only - it intentionally omits most options. Come here for the full picture.
 
 ## Contents
 
 | Document | Description |
 |---|---|
+| [Creating a Service](CREATING_A_SERVICE.md) | Section-by-section guide to writing a new service adapter, based on the `EXAMPLE` service |
 | [Advanced & System Configuration](ADVANCED_CONFIG.md) | `serve`, debugging, and system-level options not covered elsewhere |
 | [REST API Documentation](API.md) | HTTP API exposed by `unshackle serve`: endpoints, auth, remote downloads, CDM hosting |
 | [Structured Debug Logging](DEBUG_LOGGING.md) | `-d`/`--debug` JSONL output: schema, redaction rules, `log_event`/`timed_operation` conventions |

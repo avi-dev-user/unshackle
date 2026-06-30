@@ -25,15 +25,14 @@ from unshackle.core.utilities import is_close_match
 
 class EXAMPLE(Service):
     """
-    \b
     Reference service for domain.com - a deliberately exhaustive showcase of
     EVERYTHING an unshackle service can touch. It is NOT meant to run against a
     real API; it exists so a new service author can see one canonical example of
     every framework feature in one place.
 
-    \b
     Version: 2.0.0
     Author: sp4rk.y
+    Date: 2026-06-28
     Authorization: Cookies + Credentials
     Geofence: US, UK
     Robustness:
@@ -44,14 +43,12 @@ class EXAMPLE(Service):
             SL3000: 2160p
         ClearKey: 1080p (DRM-free fallback)
 
-    \b
     Tips:
         - Input may be a full URL or a bare ID/slug:
             https://domain.com/details/20914   ->   20914
         - -m / --movie forces movie parsing when the API type is ambiguous.
         - -d / --device selects a client profile block from config.yaml.
 
-    \b
     Feature map (where to look):
         __init__              TrackRequest read/override, CDM-aware codec gating
         authenticate          cookies AND credentials, JWT decode, token cache+refresh

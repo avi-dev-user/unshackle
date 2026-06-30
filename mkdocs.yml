@@ -81,6 +81,7 @@ plugins:
 
 nav:
   - Home: README.md
+  - Creating a Service: CREATING_A_SERVICE.md
   - Configuration:
       - Service Integration & Auth: SERVICE_CONFIG.md
       - Download & Processing: DOWNLOAD_CONFIG.md
