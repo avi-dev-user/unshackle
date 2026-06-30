@@ -158,6 +158,7 @@ class Config:
             "episode",
             "season_episode",
             "episode_name",
+            "date",
             "quality",
             "resolution",
             "source",

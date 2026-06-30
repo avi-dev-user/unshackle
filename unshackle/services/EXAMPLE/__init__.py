@@ -283,6 +283,8 @@ class EXAMPLE(Service):
                         year=metadata["releaseYear"] if metadata.get("releaseYear", 0) > 0 else None,
                         language=original_lang,
                         data=ep,
+                        # daily/sports: name by date instead of SxxExx (date or ISO string)
+                        # air_date=ep.get("airDate"),
                     )
                 )
         return Series(episodes)

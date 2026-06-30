@@ -3455,6 +3455,8 @@ class dl:
     @staticmethod
     def title_to_meta(title: Title_T) -> dict[str, Any]:
         """Capture the title fields needed to rebuild a Title for output naming on import."""
+        from datetime import date
+
         from unshackle.core.titles import Episode, Movie
 
         meta: dict[str, Any] = {
@@ -3469,6 +3471,7 @@ class dl:
                 number=title.number,
                 name=title.name,
                 year=title.year,
+                air_date=title.air_date.isoformat() if isinstance(title.air_date, date) else title.air_date,
             )
         elif isinstance(title, Movie):
             meta.update(type="movie", name=title.name, year=title.year)
