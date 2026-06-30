@@ -209,7 +209,8 @@ For example,
 tmdb_api_key: cf66bf18956kca5311ada3bebb84eb9a # Not a real key
 ```
 
-**Note**: Keep your API key secure and do not share it publicly. This key is used by the `core/providers/tmdb.py` metadata provider to fetch metadata from TMDB for proper file tagging and ID enrichment.
+!!! note
+    Keep your API key secure and do not share it publicly. This key is used by the `core/providers/tmdb.py` metadata provider to fetch metadata from TMDB for proper file tagging and ID enrichment.
 
 ---
 
@@ -230,7 +231,8 @@ For example,
 simkl_client_id: "your_client_id_here"
 ```
 
-**Note**: While optional, having a SIMKL Client ID improves metadata lookup reliability. SIMKL serves as an alternative or fallback metadata source to TMDB. This is used by the `core/providers/simkl.py` metadata provider.
+!!! note
+    While optional, having a SIMKL Client ID improves metadata lookup reliability. SIMKL serves as an alternative or fallback metadata source to TMDB. This is used by the `core/providers/simkl.py` metadata provider.
 
 ---
 
@@ -249,7 +251,8 @@ For example,
 ipinfo_api_key: "12a3b45cd678ef" # Not a real key
 ```
 
-**Note**: The token is only ever sent to `api.ipinfo.io` as a per-request `Authorization` header — it is never attached to your session for service requests. Used by `core/utils/ip_info.py` for region detection and proxy verification.
+!!! note
+    The token is only ever sent to `api.ipinfo.io` as a per-request `Authorization` header — it is never attached to your session for service requests. Used by `core/utils/ip_info.py` for region detection and proxy verification.
 
 ---
 
@@ -291,8 +294,9 @@ Log decryption keys in debug logs. Default: `false`.
 When `true`, actual content encryption keys (CEKs) are included in debug log output. Useful for
 debugging key retrieval and decryption issues.
 
-**Security note:** Passwords, tokens, cookies, and session tokens are always redacted regardless
-of this setting. Only content keys (`content_key`, `key` fields) are affected. Key IDs (`kid`),
-key counts, and other metadata are always logged.
+!!! note "Security note"
+    Passwords, tokens, cookies, and session tokens are always redacted regardless
+    of this setting. Only content keys (`content_key`, `key` fields) are affected. Key IDs (`kid`),
+    key counts, and other metadata are always logged.
 
 ---

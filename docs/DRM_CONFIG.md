@@ -136,10 +136,12 @@ remote_cdm:
 - Support for both Widevine and PlayReady
 - Multiple security levels (L1, L2, L3, SL2000, SL3000)
 
-**Note:** The `device_type` field determines whether the CDM operates in PlayReady or Widevine mode.
-Setting `device_type: PLAYREADY` (or using `device_name: SL2` / `SL3`) activates PlayReady mode.
-The `security_level` field is auto-computed from `device_name` when not specified (e.g., SL2 defaults
-to 2000, SL3 to 3000, and Widevine devices default to 3). You can override these if needed.
+!!! note
+
+    The `device_type` field determines whether the CDM operates in PlayReady or Widevine mode.
+    Setting `device_type: PLAYREADY` (or using `device_name: SL2` / `SL3`) activates PlayReady mode.
+    The `security_level` field is auto-computed from `device_name` when not specified (e.g., SL2 defaults
+    to 2000, SL3 to 3000, and Widevine devices default to 3). You can override these if needed.
 
 ### Custom API Remote CDM
 
@@ -310,9 +312,11 @@ remote_cdm:
     secret: your-api-secret-key     # X-Secret-Key sent to the serve instance
 ```
 
-**Note:** The `/playready` path suffix in `host` is required — `pyplayready.RemoteCdm`
-appends its own endpoint paths on top of this base, so omitting the suffix will result
-in 404 errors.
+!!! note
+
+    The `/playready` path suffix in `host` is required — `pyplayready.RemoteCdm`
+    appends its own endpoint paths on top of this base, so omitting the suffix will result
+    in 404 errors.
 
 ### Legacy PyWidevine Serve Format
 
@@ -329,7 +333,9 @@ remote_cdm:
     secret: secret_key
 ```
 
-**Note:** If the `type` field is not specified, the entry is treated as a legacy pywidevine serve CDM.
+!!! note
+
+    If the `type` field is not specified, the entry is treated as a legacy pywidevine serve CDM.
 
 [pywidevine]: https://github.com/rlaphoenix/pywidevine
 
@@ -348,10 +354,12 @@ For example,
 decrypt_labs_api_key: "your_api_key_here"
 ```
 
-**Note**: This is different from the per-CDM `secret` field in `remote_cdm` entries. This provides a global
-API key that can be referenced across multiple DecryptLabs CDM configurations. If a `remote_cdm` entry with
-`type: "decrypt_labs"` does not have a `secret` field specified, the global `decrypt_labs_api_key` will be
-used as a fallback.
+!!! note
+
+    This is different from the per-CDM `secret` field in `remote_cdm` entries. This provides a global
+    API key that can be referenced across multiple DecryptLabs CDM configurations. If a `remote_cdm` entry with
+    `type: "decrypt_labs"` does not have a `secret` field specified, the global `decrypt_labs_api_key` will be
+    used as a fallback.
 
 ---
 
@@ -402,8 +410,10 @@ locally via a WASM module.
 MonaLisa uses per-segment decryption during download (not post-download like Widevine/PlayReady),
 so segments are decrypted as they are downloaded.
 
-**Note:** MonaLisa is configured per-service rather than through global config options. Services
-that use MonaLisa handle ticket/key retrieval and CDM initialization internally.
+!!! note
+
+    MonaLisa is configured per-service rather than through global config options. Services
+    that use MonaLisa handle ticket/key retrieval and CDM initialization internally.
 
 ---
 
@@ -470,7 +480,7 @@ vault_timeout: 10.0   # seconds; per-vault `timeout:` overrides this
 ### Using an API Vault
 
 API vaults use a specific HTTP request format, therefore API or HTTP Key Vault APIs from other projects or services may
-not work in unshackle. The API format can be seen in the [API Vault Code](unshackle/vaults/API.py).
+not work in unshackle. The API format can be seen in the [API Vault Code](https://github.com/unshackle-dl/unshackle/blob/dev/unshackle/vaults/API.py).
 
 ```yaml
 - type: API
@@ -523,10 +533,12 @@ case something happens to your MySQL Vault.
   # no_push: true           # optional; commonly true for local backup vaults
 ```
 
-**Note**: You do not need to create the file at the specified path.
-SQLite will create a new SQLite database at that path if one does not exist.
-Try not to accidentally move the `db` file once created without reflecting the change in the config, or you will end
-up with multiple databases.
+!!! note
+
+    You do not need to create the file at the specified path.
+    SQLite will create a new SQLite database at that path if one does not exist.
+    Try not to accidentally move the `db` file once created without reflecting the change in the config, or you will end
+    up with multiple databases.
 
 If you work on a Team I recommend every team member having their own SQLite Vault even if you all use a MySQL vault
 together.
@@ -579,6 +591,8 @@ is useful for integrating with various third-party key vault APIs.
   api_mode: "decrypt_labs"
 ```
 
-**Note**: The `decrypt_labs` mode is always read-only and cannot receive pushed keys.
+!!! note
+
+    The `decrypt_labs` mode is always read-only and cannot receive pushed keys.
 
 ---

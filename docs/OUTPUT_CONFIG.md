@@ -43,7 +43,7 @@ Add `?` suffix to make a variable conditional (omitted when empty): `{year?}`, `
 |---|---|
 | `title` | Title of the movie, episode, or track |
 | `year` | Release year |
-| `source` | Service source tag (e.g. `AMZN`, `NF`) |
+| `source` | Service source tag (the uppercase service directory name) |
 | `tag` | Group/release tag configured via `tag:` |
 | `edition` | Edition label (e.g. `Extended`, `Theatrical`) |
 | `repack` | `REPACK` when the release is a repack, otherwise empty |
@@ -414,14 +414,14 @@ How it works:
   local first to let your local tweaks override a repo.
 - **What you see on load.** A one-line summary is logged each run, e.g.:
 
-  ```
+  ```text
   Loaded 103 services (36 duplicate(s) ignored)
   ```
 
   The full per-duplicate detail is logged only at debug verbosity (`unshackle -d ...`), one line per
   duplicate, naming the path that loaded and the path that was ignored:
 
-  ```
+  ```text
   EXAMPLE: using <unshackle>/services/EXAMPLE/__init__.py, ignoring duplicate <unshackle>/services/_repos/your-repo/EXAMPLE/__init__.py
   ```
 

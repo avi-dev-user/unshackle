@@ -65,7 +65,8 @@ Format: `gluetun:provider:region`
 3. Generate or view your service credentials
 4. Copy the username and password
 
-> **Note**: Use service credentials, NOT your account email/password.
+!!! note
+    Use service credentials, NOT your account email/password.
 
 ### WireGuard Credentials (Advanced)
 
@@ -244,15 +245,15 @@ Common issues:
 
 ---
 
-# ExpressVPN HTTPS Proxy
+## ExpressVPN HTTPS Proxy
 
 ExpressVPN is a standalone HTTPS proxy provider — it does **not** use Docker or the gluetun sub-provider system. It authenticates via a browser-extension OAuth flow (Keycloak/PKCE) and returns an authenticated `https://cat:<token>@<host>:443` proxy URL.
 
-## Prerequisites
+### Prerequisites
 
 An active ExpressVPN subscription is required. The provider resolves proxy-capable locations through ExpressVPN's own API, so no local VPN client or Docker container is needed.
 
-## Authentication
+### Authentication
 
 The provider uses a token cascade (tried in order):
 
@@ -262,7 +263,7 @@ The provider uses a token cascade (tried in order):
 
 Export cookies from a browser that is logged in to `auth.expressvpn.com`. Any Netscape-format, JSON array, or `name=value` file is accepted.
 
-## Configuration
+### Configuration
 
 Add to `~/.config/unshackle/unshackle.yaml` under `proxy_providers`:
 
@@ -279,7 +280,7 @@ proxy_providers:
 
 `region_map` maps a country code to a default city preset. An empty (null) value enables smart connection (a random location in that country). The preset is only applied when the CLI query contains no city; an explicit city in the query always takes precedence.
 
-### Optional keys
+#### Optional keys
 
 | Key | Default | Description |
 |-----|---------|-------------|
@@ -291,7 +292,7 @@ proxy_providers:
 | `refresh_token` | *(none)* | OAuth refresh token (manual override) |
 | `timeout` | `10.0` | HTTP request timeout in seconds |
 
-## Usage
+### Usage
 
 ```bash
 unshackle dl SERVICE CONTENT --proxy expressvpn:us        # random/smart US location
@@ -307,7 +308,7 @@ Query format: `expressvpn:<country>[-<city>[-<N>]]`
 - `city` — optional city abbreviation or slug matched against location names using first-letter abbreviation (`ny` → "New York"), exact slug, prefix, then substring strategies.
 - `N` — optional 1-based server index (e.g. `-2` selects the second server in the matched city). If `N` exceeds the available server count, a random server is selected.
 
-## City matching
+### City matching
 
 The city part of the query is matched against ExpressVPN location names using these strategies (in priority order):
 
@@ -316,6 +317,6 @@ The city part of the query is matched against ExpressVPN location names using th
 3. Prefix match — `mia` matches "Miami"
 4. Substring match — `york` matches "New York"
 
-## Token cache
+### Token cache
 
 After the first successful authentication the token cache is written to `cache/global/expressvpn_tokens.json` (mode 0600). Subsequent runs refresh expired access/SRT/connection tokens automatically without re-reading cookies.

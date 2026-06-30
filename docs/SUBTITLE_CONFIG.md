@@ -33,7 +33,7 @@ Control subtitle conversion, SDH (hearing-impaired) stripping, formatting preser
   `--sub-format srt` for the muxed track, or `sidecar_format: srt` for sidecars. To keep raw styled
   sidecars, set `sidecar_format: original`.
 
-  **Segmented subtitles** (`fVTT`/WVTT and `fTTML`/STPP from DASH/HLS, e.g. HBO Max) are read directly
+  **Segmented subtitles** (`fVTT`/WVTT and `fTTML`/STPP from DASH/HLS) are read directly
   from the fragmented MP4: fVTT via subby's `WVTTConverter`, fTTML via pycaption's box parsing. They
   can be converted *from* but not *to*.
 
