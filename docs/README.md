@@ -1,6 +1,6 @@
-# docs/
+# unshackle Documentation
 
-This folder is the **canonical configuration reference** for unshackle. `unshackle/unshackle-example.yaml` is a minimal starter config only — it intentionally omits most options. Come here for the full picture.
+This is the **canonical configuration reference** for unshackle. `unshackle/unshackle-example.yaml` is a minimal starter config only — it intentionally omits most options. Come here for the full picture.
 
 ## Contents
 
