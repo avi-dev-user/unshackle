@@ -57,6 +57,18 @@ Add `?` suffix to make a variable conditional (omitted when empty): `{year?}`, `
 | `episode` | Episode number (e.g. `1`) |
 | `season_episode` | Combined season/episode (e.g. `S01E01`) |
 | `episode_name` | Episode title |
+| `date` | Air date in ISO form (e.g. `2024-06-30`), only for daily/sports content |
+
+!!! note "Daily / sports content"
+    When a service supplies an air date (daily talk shows, news, sports events),
+    `{season_episode}` automatically renders the date using your template's separator
+    (e.g. `2024.06.30` for a dotted template, `2024 06 30` for a spaced one). The
+    standalone `{year}` is dropped from the filename — the air date is the sole date —
+    so every episode of a show names consistently. Folders still keep the year (e.g.
+    `Show Name (2010)/2024/`). No template change is needed.
+
+    Use the `{date}` variable instead if you want a fixed `YYYY-MM-DD` form regardless
+    of separator. Folders for dated episodes group by air year (e.g. `Show Name/2024/`).
 
 ### Video / audio variables
 
