@@ -6,6 +6,57 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 This changelog is automatically generated using [git-cliff](https://git-cliff.org).
 
+## [5.3.0] - 2026-06-30
+
+### Features
+
+- *dl*: Add --merge-video to merge video language variants
+- Native ExpressVPN HTTPS Proxy Provider
+- Support Python 3.14 and widen range to 3.11-3.14
+- Add automatic Firefox cookie and localstorage extraction
+- *api*: Expose title description, date and cover_url in serialize_title
+- *api*: Expose active-track segment counts and transfer speed in job progress
+- *vaults*: Add configurable network timeout for remote vaults
+- *docs*: Add per-vault network timeout configuration for remote vaults
+- *services*: Load service plugins from git repos
+- *proxies*: Add Proton VPN proxy provider
+- *output*: Support nested directories in folder templates
+- *proxies*: Add ProtonVPN TV login, drop cookie refresh
+- *titles*: Add air_date for date-based episode naming
+
+### Bug Fixes
+
+- *api*: Annotate routes.py to pass strict mypy
+- *config*: Match per-service cdm keys case-insensitively
+- *drm*: Don't switch to a mismatched CDM type during licensing
+- *env*: Only resolve Path items in directory lists
+- *output*: Treat `/` and `\` as folder separators on any OS
+- *console*: Pause active live contexts during terminal input
+- *dl*: Apply per-service decryption tool override
+- *hls*: Stream segment merges to avoid OOM on large tracks
+
+### Documentation
+
+- Rename to match other docs.
+- *config*: Make docs/ canonical, slim unshackle-example.yaml to a starter
+- Add MkDocs Material documentation site
+- *readme*: Link Docs to docs.unshackle.dev, remove Wiki
+- Add "Creating a Service" guide
+- Fix inaccuracies in service-creation guide
+
+### Performance Improvements
+
+- *tracks*: Skip redundant DV/VUI bitstream passes
+- *hls*: Rename single decrypted range instead of re-copying
+
+### Changes
+
+- *api*: Remove dead code paths in serve/remote layer
+- *api*: Dedup handler serializers, validation, and service setup
+- *api*: Use Event.wait and a shared to_enum helper
+- *api*: Collapse route registration into single ROUTES table
+- *api*: Drop dead error codes, lock error contract harness
+
 ## [5.2.0] - 2026-06-16
 
 ### Features
