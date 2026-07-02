@@ -332,65 +332,20 @@ class DASH:
         if period_count > 1:
             log.debug(f"Multi-period manifest detected with {period_count} content periods")
 
-        # Signature of the wanted track, used to match it across periods. Some services
-        # give the same logical track a different Representation id in each period, so
-        # matching on id alone would find it only in its origin period and silently
-        # truncate multi-period content to that one period.
-        def _content_type(as_el: Element, rep_el: Optional[Element] = None) -> Optional[str]:
-            ct = (rep_el.get("contentType") if rep_el is not None else None) or as_el.get("contentType")
-            if not ct:
-                mime = (rep_el.get("mimeType") if rep_el is not None else None) or as_el.get("mimeType")
-                ct = mime.split("/")[0] if mime else None
-            return ct
-
-        orig_ct = _content_type(adaptation_set, representation)
-        orig_lang = adaptation_set.get("lang") or representation.get("lang")
-        orig_codecs = representation.get("codecs") or adaptation_set.get("codecs")
-        orig_descriptive = DASH.is_descriptive(adaptation_set)
-        try:
-            orig_bandwidth = int(representation.get("bandwidth") or 0)
-        except ValueError:
-            orig_bandwidth = 0
-
-        def _match_representation(period_el: Element) -> tuple[Optional[Element], Optional[Element]]:
-            # An exact Representation id match wins when the service keeps ids stable.
-            for as_el in period_el.findall("AdaptationSet"):
-                if DASH.is_trick_mode(as_el):
-                    continue
-                for rep_el in as_el.findall("Representation"):
-                    if rep_el.get("id") == rep_id:
-                        return as_el, rep_el
-            # Otherwise match by characteristics (content type, language, codec and
-            # descriptive role), then pick the rung with the closest bandwidth.
-            best: Optional[tuple[int, Element, Element]] = None
-            for as_el in period_el.findall("AdaptationSet"):
-                if DASH.is_trick_mode(as_el):
-                    continue
-                if DASH.is_descriptive(as_el) != orig_descriptive:
-                    continue
-                as_lang = as_el.get("lang")
-                for rep_el in as_el.findall("Representation"):
-                    if orig_ct and _content_type(as_el, rep_el) not in (None, orig_ct):
-                        continue
-                    if orig_lang and (rep_el.get("lang") or as_lang) not in (None, orig_lang):
-                        continue
-                    rep_codecs = rep_el.get("codecs") or as_el.get("codecs")
-                    if orig_codecs and rep_codecs and rep_codecs != orig_codecs:
-                        continue
-                    try:
-                        bw = int(rep_el.get("bandwidth") or 0)
-                    except ValueError:
-                        bw = 0
-                    score = abs(bw - orig_bandwidth)
-                    if best is None or score < best[0]:
-                        best = (score, as_el, rep_el)
-            if best is not None:
-                return best[1], best[2]
-            return None, None
-
         for period_idx, content_period in enumerate(content_periods):
             # Find the matching representation in this period
-            matched_as, matched_rep = _match_representation(content_period)
+            matched_rep = None
+            matched_as = None
+            for as_ in content_period.findall("AdaptationSet"):
+                if DASH.is_trick_mode(as_):
+                    continue
+                for rep in as_.findall("Representation"):
+                    if rep.get("id") == rep_id:
+                        matched_rep = rep
+                        matched_as = as_
+                        break
+                if matched_rep is not None:
+                    break
 
             if matched_rep is None or matched_as is None:
                 period_id = content_period.get("id", period_idx)
@@ -973,9 +928,6 @@ class DASH:
             (x.get("schemeIdUri"), x.get("value"))
             in (("urn:mpeg:dash:role:2011", "descriptive"), ("urn:tva:metadata:cs:AudioPurposeCS:2007", "1"))
             for x in adaptation_set.findall("Accessibility")
-        ) or any(
-            x.get("schemeIdUri") == "urn:mpeg:dash:role:2011" and x.get("value") in ("description", "descriptive")
-            for x in adaptation_set.findall("Role")
         )
 
     @staticmethod
