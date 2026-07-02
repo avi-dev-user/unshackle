@@ -331,16 +331,34 @@ class Widevine:
 
         decrypt_start = time.monotonic()
         if decrypter == "mp4decrypt":
+            used_tool = "mp4decrypt"
             self._decrypt_with_mp4decrypt(path)
         else:
-            self._decrypt_with_shaka_packager(path)
+            # Default to Shaka Packager, falling back to mp4decrypt on failure. Some Shaka builds
+            # SIGSEGV (or otherwise error) on Smooth/PIFF-origin content; mp4decrypt reads the same
+            # content keys, so fall back to it rather than failing the whole download.
+            used_tool = "shaka-packager"
+            try:
+                self._decrypt_with_shaka_packager(path)
+            except subprocess.CalledProcessError as e:
+                if not binaries.Mp4decrypt:
+                    raise
+                # Shaka may have left a partial *_decrypted output; clear it so mp4decrypt starts clean.
+                stale = path.with_stem(f"{path.stem}_decrypted")
+                if stale.exists():
+                    stale.unlink()
+                console.log(
+                    f"[Widevine]: Shaka Packager failed (exit {e.returncode}), falling back to mp4decrypt"
+                )
+                used_tool = "mp4decrypt"
+                self._decrypt_with_mp4decrypt(path)
 
         log_event(
             "drm_decrypt_complete",
             level="DEBUG",
-            message=f"Decrypted {path.name} with {tool}",
+            message=f"Decrypted {path.name} with {used_tool}",
             drm_type="Widevine",
-            tool=tool,
+            tool=used_tool,
             file=path.name,
             duration_ms=round((time.monotonic() - decrypt_start) * 1000, 1),
             output_size=path.stat().st_size if path.exists() else 0,
