@@ -1,12 +1,14 @@
 import asyncio
 import enum
 import logging
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 from aiohttp import web
 
 from unshackle.core.api.errors import APIError, APIErrorCode, handle_api_exception
 from unshackle.core.api.input_bridge import AuthStatus, InputBridge
+from unshackle.core.api.sanitize import sanitize_log
 from unshackle.core.config import config
 from unshackle.core.constants import AUDIO_CODEC_MAP, DYNAMIC_RANGE_MAP, VIDEO_CODEC_MAP
 from unshackle.core.credential import Credential
@@ -14,13 +16,9 @@ from unshackle.core.proxies.resolve import initialize_proxy_providers, resolve_p
 from unshackle.core.services import Services
 from unshackle.core.titles import Episode, Movie, Title_T
 from unshackle.core.tracks import Audio, Subtitle, Video
+from unshackle.core.utils.collections import ci_get
 
 log = logging.getLogger("api")
-
-
-def sanitize_log(value: object) -> str:
-    """Sanitize a value for safe logging by removing newlines and control characters."""
-    return str(value).replace("\n", "").replace("\r", "").replace("\x00", "")
 
 
 def _resolve_credential(data: Dict[str, Any], service: str, profile: Optional[str]):
@@ -137,7 +135,7 @@ def load_full_cdm(service: str, profile: Optional[str], cdm_type: Optional[str] 
     from unshackle.core.cdm import load_cdm
     from unshackle.core.config import config as app_config
 
-    cdm_name = app_config.cdm.get(service) or app_config.cdm.get("default")
+    cdm_name = ci_get(app_config.cdm, service) or ci_get(app_config.cdm, "default")
     if isinstance(cdm_name, dict):
         lower_keys = {k.lower(): v for k, v in cdm_name.items()}
         if {"widevine", "playready"} & lower_keys.keys():
@@ -148,7 +146,7 @@ def load_full_cdm(service: str, profile: Optional[str], cdm_type: Optional[str] 
                 )
             cdm_name = lower_keys.get(drm_key or "widevine") or lower_keys.get("playready")
         else:
-            cdm_name = cdm_name.get(profile) or cdm_name.get("default") or app_config.cdm.get("default")
+            cdm_name = cdm_name.get(profile) or cdm_name.get("default") or ci_get(app_config.cdm, "default")
 
     if not cdm_name or not isinstance(cdm_name, str):
         return _resolve_server_cdm(service, profile, cdm_type)
@@ -156,7 +154,9 @@ def load_full_cdm(service: str, profile: Optional[str], cdm_type: Optional[str] 
     try:
         return load_cdm(cdm_name, service_name=service)
     except Exception as exc:  # noqa: BLE001 - fall back to stub on load failure
-        log.warning(f"load_cdm({cdm_name!r}) failed for {service}: {exc}; using lightweight stub")
+        log.warning(
+            f"load_cdm({sanitize_log(cdm_name)!r}) failed for {sanitize_log(service)}: {exc}; using lightweight stub"
+        )
         return _resolve_server_cdm(service, profile, cdm_type)
 
 
@@ -232,6 +232,44 @@ def instantiate_service(
     return parent_ctx.invoke(service_module.cli, title=title, **extras)
 
 
+def setup_list_service(data: Dict[str, Any], normalized_service: str, profile: Optional[str], title_id: str) -> Any:
+    """Build and authenticate a service instance for list_titles / list_tracks.
+
+    Runs the shared preamble: load yaml → resolve proxy → load CDM → build ctx →
+    instantiate → authenticate. Raises APIError on proxy failure.
+    """
+    from unshackle.commands.dl import dl
+
+    service_config = load_service_yaml(normalized_service)
+
+    proxy_param = data.get("proxy")
+    no_proxy = data.get("no_proxy", False)
+    proxy_providers = []
+
+    if not no_proxy:
+        proxy_providers = initialize_proxy_providers()
+
+    if proxy_param and not no_proxy:
+        try:
+            proxy_param = resolve_proxy(proxy_param, proxy_providers)
+        except ValueError as e:
+            raise APIError(
+                APIErrorCode.INVALID_PROXY,
+                f"Proxy error: {e}",
+                details={"proxy": proxy_param, "service": normalized_service},
+            )
+
+    cdm = load_full_cdm(normalized_service, profile, data.get("cdm_type"))
+    parent_ctx = build_parent_ctx(profile, cdm, proxy_param, no_proxy, proxy_providers, service_config)
+    service_module = Services.load(normalized_service)
+    service_instance = instantiate_service(parent_ctx, service_module, title_id, data, LIST_HANDLER_TRANSPORT_KEYS)
+
+    cookies = dl.get_cookie_jar(normalized_service, profile)
+    credential = _resolve_credential(data, normalized_service, profile)
+    service_instance.authenticate(cookies, credential)
+    return service_instance
+
+
 def get_allowed_services(request: Optional[web.Request] = None) -> Optional[List[str]]:
     """Get effective service allowlist considering global + per-key config.
 
@@ -279,53 +317,50 @@ def validate_service(service_tag: str, request: Optional[web.Request] = None) ->
         return None
 
 
+def require_fields(data: Dict[str, Any], *names: str) -> None:
+    """Raise INVALID_INPUT for the first missing/falsy required field."""
+    for name in names:
+        if not data.get(name):
+            raise APIError(
+                APIErrorCode.INVALID_INPUT,
+                f"Missing required parameter: {name}",
+                details={"missing_parameter": name},
+            )
+
+
 def serialize_title(title: Title_T) -> Dict[str, Any]:
     """Convert a title object to JSON-serializable dict."""
     title_language = str(title.language) if hasattr(title, "language") and title.language else None
-    # Optional display metadata: the synopsis (title.description) and a release/air date a
-    # service may stash in title.data["date"]. Surfaced so a client can show a richer caption.
+    # Optional display metadata a service may provide: a synopsis (title.description) and a
+    # release/air date or poster image URL stashed in title.data. Surfaced so a client can show
+    # a richer listing without re-fetching the page.
     description = getattr(title, "description", None) or None
     _data = getattr(title, "data", None)
     date = _data.get("date") if isinstance(_data, dict) else None
-    # optional poster/cover image URL a service may stash, for a client to use as the thumbnail
     cover_url = _data.get("cover_url") if isinstance(_data, dict) else None
 
-    if isinstance(title, Episode):
-        episode_name = title.name if title.name else f"Episode {title.number:02d}"
-        result = {
-            "type": "episode",
-            "name": episode_name,
-            "series_title": str(title.title),
-            "season": title.season,
-            "number": title.number,
-            "year": title.year,
-            "id": str(title.id) if hasattr(title, "id") else None,
-            "language": title_language,
-            "description": description,
-            "date": date,
-            "cover_url": cover_url,
-        }
-    elif isinstance(title, Movie):
-        result = {
-            "type": "movie",
-            "name": str(title.name) if hasattr(title, "name") else str(title),
-            "year": title.year,
-            "id": str(title.id) if hasattr(title, "id") else None,
-            "language": title_language,
-            "description": description,
-            "date": date,
-            "cover_url": cover_url,
-        }
+    is_episode = isinstance(title, Episode)
+    if is_episode:
+        name = title.name if title.name else f"Episode {title.number:02d}"
     else:
-        result = {
-            "type": "other",
-            "name": str(title.name) if hasattr(title, "name") else str(title),
-            "id": str(title.id) if hasattr(title, "id") else None,
-            "language": title_language,
-            "description": description,
-            "date": date,
-            "cover_url": cover_url,
-        }
+        name = str(title.name) if hasattr(title, "name") else str(title)
+
+    result = {
+        "type": "episode" if is_episode else "movie" if isinstance(title, Movie) else "other",
+        "name": name,
+        "id": str(title.id) if hasattr(title, "id") else None,
+        "language": title_language,
+        "description": description,
+        "date": date,
+        "cover_url": cover_url,
+    }
+    # "other" titles carry no year; only Episode/Movie do.
+    if isinstance(title, (Episode, Movie)):
+        result["year"] = title.year
+    if is_episode:
+        result["series_title"] = str(title.title)
+        result["season"] = title.season
+        result["number"] = title.number
 
     return result
 
@@ -394,46 +429,19 @@ def serialize_drm(drm_list) -> Optional[List[Dict[str, Any]]]:
         drm_class = drm.__class__.__name__
         drm_info["type"] = drm_class.lower()
 
-        # Get PSSH - handle both Widevine and PlayReady
-        if hasattr(drm, "_pssh") and drm._pssh:
-            pssh_obj = None
+        # PSSH: pywidevine exposes dumps(); pyplayready's PSSH has no base64 method
+        # here, so PlayReady omits the field (unchanged from prior behaviour).
+        pssh_obj = getattr(drm, "_pssh", None)
+        if pssh_obj is not None and hasattr(pssh_obj, "dumps"):
             try:
-                pssh_obj = drm._pssh
-                # Try to get base64 representation
-                if hasattr(pssh_obj, "dumps"):
-                    # pywidevine PSSH has dumps() method
-                    drm_info["pssh"] = pssh_obj.dumps()
-                elif hasattr(pssh_obj, "__bytes__"):
-                    # Convert to base64
-                    import base64
-
-                    drm_info["pssh"] = base64.b64encode(bytes(pssh_obj)).decode()
-                elif hasattr(pssh_obj, "to_base64"):
-                    drm_info["pssh"] = pssh_obj.to_base64()
-                else:
-                    # Fallback - str() works for pywidevine PSSH
-                    pssh_str = str(pssh_obj)
-                    # Check if it's already base64-like or an object repr
-                    if not pssh_str.startswith("<"):
-                        drm_info["pssh"] = pssh_str
+                drm_info["pssh"] = pssh_obj.dumps()
             except (ValueError, TypeError, KeyError):
-                # Some PSSH implementations can fail to parse/serialize; log and continue.
-                pssh_type = type(pssh_obj).__name__ if pssh_obj is not None else None
                 log.warning(
-                    "Failed to extract/serialize PSSH for DRM type=%s pssh_type=%s",
+                    "Failed to serialize PSSH for DRM type=%s pssh_type=%s",
                     drm_class,
-                    pssh_type,
+                    type(pssh_obj).__name__,
                     exc_info=True,
                 )
-            except Exception:
-                # Don't silently swallow unexpected failures; make them visible and propagate.
-                pssh_type = type(pssh_obj).__name__ if pssh_obj is not None else None
-                log.exception(
-                    "Unexpected error while extracting/serializing PSSH for DRM type=%s pssh_type=%s",
-                    drm_class,
-                    pssh_type,
-                )
-                raise
 
         # Get KIDs
         if hasattr(drm, "kids") and drm.kids:
@@ -454,15 +462,21 @@ def serialize_drm(drm_list) -> Optional[List[Dict[str, Any]]]:
     return result if result else None
 
 
+def enum_name(value: Any) -> str:
+    """Return an enum-like value's .name, falling back to str()."""
+    return value.name if hasattr(value, "name") else str(value)
+
+
+def descriptor_name(track: Any) -> Optional[str]:
+    """Manifest descriptor (HLS/DASH/URL) name for a track, or None."""
+    descriptor = getattr(track, "descriptor", None)
+    return enum_name(descriptor) if descriptor else None
+
+
 def serialize_video_track(track: Video, include_url: bool = False) -> Dict[str, Any]:
     """Convert video track to JSON-serializable dict."""
-    codec_name = track.codec.name if hasattr(track.codec, "name") else str(track.codec)
-    range_name = track.range.name if hasattr(track.range, "name") else str(track.range)
-
-    # Serialize the manifest descriptor (HLS, DASH, URL, etc.)
-    descriptor_name = None
-    if hasattr(track, "descriptor") and track.descriptor:
-        descriptor_name = track.descriptor.name if hasattr(track.descriptor, "name") else str(track.descriptor)
+    codec_name = enum_name(track.codec)
+    range_name = enum_name(track.range)
 
     result = {
         "id": str(track.id),
@@ -477,7 +491,7 @@ def serialize_video_track(track: Video, include_url: bool = False) -> Dict[str, 
         "range_display": DYNAMIC_RANGE_MAP.get(range_name, range_name),
         "language": str(track.language) if track.language else None,
         "drm": serialize_drm(track.drm) if hasattr(track, "drm") and track.drm else None,
-        "descriptor": descriptor_name,
+        "descriptor": descriptor_name(track),
     }
     if include_url and hasattr(track, "url") and track.url:
         result["url"] = str(track.url)
@@ -486,12 +500,7 @@ def serialize_video_track(track: Video, include_url: bool = False) -> Dict[str, 
 
 def serialize_audio_track(track: Audio, include_url: bool = False) -> Dict[str, Any]:
     """Convert audio track to JSON-serializable dict."""
-    codec_name = track.codec.name if hasattr(track.codec, "name") else str(track.codec)
-
-    # Serialize the manifest descriptor (HLS, DASH, URL, etc.)
-    descriptor_name = None
-    if hasattr(track, "descriptor") and track.descriptor:
-        descriptor_name = track.descriptor.name if hasattr(track.descriptor, "name") else str(track.descriptor)
+    codec_name = enum_name(track.codec)
 
     result = {
         "id": str(track.id),
@@ -503,7 +512,7 @@ def serialize_audio_track(track: Audio, include_url: bool = False) -> Dict[str, 
         "atmos": track.atmos if hasattr(track, "atmos") else False,
         "descriptive": track.descriptive if hasattr(track, "descriptive") else False,
         "drm": serialize_drm(track.drm) if hasattr(track, "drm") and track.drm else None,
-        "descriptor": descriptor_name,
+        "descriptor": descriptor_name(track),
     }
     if include_url and hasattr(track, "url") and track.url:
         result["url"] = str(track.url)
@@ -512,19 +521,14 @@ def serialize_audio_track(track: Audio, include_url: bool = False) -> Dict[str, 
 
 def serialize_subtitle_track(track: Subtitle, include_url: bool = False) -> Dict[str, Any]:
     """Convert subtitle track to JSON-serializable dict."""
-    # Get descriptor for compatibility
-    descriptor_name = None
-    if hasattr(track, "descriptor") and track.descriptor:
-        descriptor_name = track.descriptor.name if hasattr(track.descriptor, "name") else str(track.descriptor)
-
     result = {
         "id": str(track.id),
-        "codec": track.codec.name if hasattr(track.codec, "name") else str(track.codec),
+        "codec": enum_name(track.codec),
         "language": str(track.language) if track.language else None,
         "forced": track.forced if hasattr(track, "forced") else False,
         "sdh": track.sdh if hasattr(track, "sdh") else False,
         "cc": track.cc if hasattr(track, "cc") else False,
-        "descriptor": descriptor_name,
+        "descriptor": descriptor_name(track),
     }
     if include_url and hasattr(track, "url") and track.url:
         result["url"] = str(track.url)
@@ -623,23 +627,10 @@ async def search_handler(data: Dict[str, Any], request: Optional[web.Request] = 
 
 async def list_titles_handler(data: Dict[str, Any], request: Optional[web.Request] = None) -> web.Response:
     """Handle list-titles request."""
+    require_fields(data, "service", "title_id")
     service_tag = data.get("service")
     title_id = data.get("title_id")
     profile = data.get("profile")
-
-    if not service_tag:
-        raise APIError(
-            APIErrorCode.INVALID_INPUT,
-            "Missing required parameter: service",
-            details={"missing_parameter": "service"},
-        )
-
-    if not title_id:
-        raise APIError(
-            APIErrorCode.INVALID_INPUT,
-            "Missing required parameter: title_id",
-            details={"missing_parameter": "title_id"},
-        )
 
     normalized_service = validate_service(service_tag, request)
     if not normalized_service:
@@ -650,37 +641,7 @@ async def list_titles_handler(data: Dict[str, Any], request: Optional[web.Reques
         )
 
     try:
-        from unshackle.commands.dl import dl
-
-        service_config = load_service_yaml(normalized_service)
-
-        proxy_param = data.get("proxy")
-        no_proxy = data.get("no_proxy", False)
-        proxy_providers = []
-
-        if not no_proxy:
-            proxy_providers = initialize_proxy_providers()
-
-        if proxy_param and not no_proxy:
-            try:
-                resolved_proxy = resolve_proxy(proxy_param, proxy_providers)
-                proxy_param = resolved_proxy
-            except ValueError as e:
-                raise APIError(
-                    APIErrorCode.INVALID_PROXY,
-                    f"Proxy error: {e}",
-                    details={"proxy": proxy_param, "service": normalized_service},
-                )
-
-        cdm = load_full_cdm(normalized_service, profile, data.get("cdm_type"))
-        parent_ctx = build_parent_ctx(profile, cdm, proxy_param, no_proxy, proxy_providers, service_config)
-        service_module = Services.load(normalized_service)
-        service_instance = instantiate_service(parent_ctx, service_module, title_id, data, LIST_HANDLER_TRANSPORT_KEYS)
-
-        cookies = dl.get_cookie_jar(normalized_service, profile)
-        credential = _resolve_credential(data, normalized_service, profile)
-        service_instance.authenticate(cookies, credential)
-
+        service_instance = setup_list_service(data, normalized_service, profile, title_id)
         titles = service_instance.get_titles()
 
         if hasattr(titles, "__iter__") and not isinstance(titles, str):
@@ -704,23 +665,10 @@ async def list_titles_handler(data: Dict[str, Any], request: Optional[web.Reques
 
 async def list_tracks_handler(data: Dict[str, Any], request: Optional[web.Request] = None) -> web.Response:
     """Handle list-tracks request."""
+    require_fields(data, "service", "title_id")
     service_tag = data.get("service")
     title_id = data.get("title_id")
     profile = data.get("profile")
-
-    if not service_tag:
-        raise APIError(
-            APIErrorCode.INVALID_INPUT,
-            "Missing required parameter: service",
-            details={"missing_parameter": "service"},
-        )
-
-    if not title_id:
-        raise APIError(
-            APIErrorCode.INVALID_INPUT,
-            "Missing required parameter: title_id",
-            details={"missing_parameter": "title_id"},
-        )
 
     normalized_service = validate_service(service_tag, request)
     if not normalized_service:
@@ -731,37 +679,7 @@ async def list_tracks_handler(data: Dict[str, Any], request: Optional[web.Reques
         )
 
     try:
-        from unshackle.commands.dl import dl
-
-        service_config = load_service_yaml(normalized_service)
-
-        proxy_param = data.get("proxy")
-        no_proxy = data.get("no_proxy", False)
-        proxy_providers = []
-
-        if not no_proxy:
-            proxy_providers = initialize_proxy_providers()
-
-        if proxy_param and not no_proxy:
-            try:
-                resolved_proxy = resolve_proxy(proxy_param, proxy_providers)
-                proxy_param = resolved_proxy
-            except ValueError as e:
-                raise APIError(
-                    APIErrorCode.INVALID_PROXY,
-                    f"Proxy error: {e}",
-                    details={"proxy": proxy_param, "service": normalized_service},
-                )
-
-        cdm = load_full_cdm(normalized_service, profile, data.get("cdm_type"))
-        parent_ctx = build_parent_ctx(profile, cdm, proxy_param, no_proxy, proxy_providers, service_config)
-        service_module = Services.load(normalized_service)
-        service_instance = instantiate_service(parent_ctx, service_module, title_id, data, LIST_HANDLER_TRANSPORT_KEYS)
-
-        cookies = dl.get_cookie_jar(normalized_service, profile)
-        credential = _resolve_credential(data, normalized_service, profile)
-        service_instance.authenticate(cookies, credential)
-
+        service_instance = setup_list_service(data, normalized_service, profile, title_id)
         titles = service_instance.get_titles()
 
         wanted_param = data.get("wanted")
@@ -781,7 +699,9 @@ async def list_tracks_handler(data: Dict[str, Any], request: Optional[web.Reques
                         wanted = season_range.parse_tokens(*wanted_param)
                     else:
                         wanted = season_range.parse_tokens(wanted_param)
-                    log.debug(f"Parsed wanted '{wanted_param}' into {len(wanted)} episodes: {wanted[:10]}...")
+                    log.debug(
+                        f"Parsed wanted '{sanitize_log(wanted_param)}' into {len(wanted)} episodes: {wanted[:10]}..."
+                    )
                 except (Exception, SystemExit) as e:
                     raise APIError(
                         APIErrorCode.INVALID_PARAMETERS,
@@ -901,6 +821,25 @@ async def list_tracks_handler(data: Dict[str, Any], request: Optional[web.Reques
         )
 
 
+VALID_VCODECS = ["H264", "H265", "H.264", "H.265", "AVC", "HEVC", "VC1", "VC-1", "VP8", "VP9", "AV1"]
+VALID_ACODECS = ["AAC", "AC3", "EC3", "EAC3", "DD", "DD+", "AC4", "OPUS", "FLAC", "ALAC", "VORBIS", "OGG", "DTS"]
+
+
+def check_codec(value: Any, allowed: List[str], name: str) -> Optional[str]:
+    """Validate a comma-string or list of codec tokens against `allowed` (case-insensitive)."""
+    if isinstance(value, str):
+        tokens = [v.strip() for v in value.split(",") if v.strip()]
+    elif isinstance(value, list):
+        tokens = [str(v).strip() for v in value if str(v).strip()]
+    else:
+        return f"{name} must be a string or list"
+
+    invalid = [token for token in tokens if token.upper() not in allowed]
+    if invalid:
+        return f"Invalid {name}: {', '.join(invalid)}. Must be one of: {', '.join(allowed)}"
+    return None
+
+
 def validate_download_parameters(data: Dict[str, Any]) -> Optional[str]:
     """
     Validate download parameters and return error message if invalid.
@@ -909,44 +848,14 @@ def validate_download_parameters(data: Dict[str, Any]) -> Optional[str]:
         None if valid, error message string if invalid
     """
     if "vcodec" in data and data["vcodec"]:
-        valid_vcodecs = ["H264", "H265", "H.264", "H.265", "AVC", "HEVC", "VC1", "VC-1", "VP8", "VP9", "AV1"]
-        if isinstance(data["vcodec"], str):
-            vcodec_values = [v.strip() for v in data["vcodec"].split(",") if v.strip()]
-        elif isinstance(data["vcodec"], list):
-            vcodec_values = [str(v).strip() for v in data["vcodec"] if str(v).strip()]
-        else:
-            return "vcodec must be a string or list"
-
-        invalid = [value for value in vcodec_values if value.upper() not in valid_vcodecs]
-        if invalid:
-            return f"Invalid vcodec: {', '.join(invalid)}. Must be one of: {', '.join(valid_vcodecs)}"
+        err = check_codec(data["vcodec"], VALID_VCODECS, "vcodec")
+        if err:
+            return err
 
     if "acodec" in data and data["acodec"]:
-        valid_acodecs = [
-            "AAC",
-            "AC3",
-            "EC3",
-            "EAC3",
-            "DD",
-            "DD+",
-            "AC4",
-            "OPUS",
-            "FLAC",
-            "ALAC",
-            "VORBIS",
-            "OGG",
-            "DTS",
-        ]
-        if isinstance(data["acodec"], str):
-            acodec_values = [v.strip() for v in data["acodec"].split(",") if v.strip()]
-        elif isinstance(data["acodec"], list):
-            acodec_values = [str(v).strip() for v in data["acodec"] if str(v).strip()]
-        else:
-            return "acodec must be a string or list"
-
-        invalid = [value for value in acodec_values if value.upper() not in valid_acodecs]
-        if invalid:
-            return f"Invalid acodec: {', '.join(invalid)}. Must be one of: {', '.join(valid_acodecs)}"
+        err = check_codec(data["acodec"], VALID_ACODECS, "acodec")
+        if err:
+            return err
 
     if "sub_format" in data and data["sub_format"]:
         valid_sub_formats = ["SRT", "VTT", "ASS", "SSA", "TTML", "STPP", "WVTT", "SMI", "SUB", "MPL2", "TMP"]
@@ -1003,13 +912,13 @@ def validate_download_parameters(data: Dict[str, Any]) -> Optional[str]:
         return "Cannot use both s_lang and require_subs"
 
     if "range" in data and data["range"]:
-        valid_ranges = ["SDR", "HDR10", "HDR10+", "DV", "HLG", "HYBRID"]
-        if isinstance(data["range"], list):
-            for r in data["range"]:
-                if r.upper() not in valid_ranges:
-                    return f"Invalid range value: {r}. Must be one of: {', '.join(valid_ranges)}"
-        elif data["range"].upper() not in valid_ranges:
-            return f"Invalid range value: {data['range']}. Must be one of: {', '.join(valid_ranges)}"
+        # "HDR10P" is the canonical range value ("+" is awkward in scripts); "HDR10+" stays valid.
+        valid_ranges = ["SDR", "HDR10", "HDR10P", "DV", "HLG", "HYBRID"]
+        accepted = {*valid_ranges, "HDR10+"}
+        values = data["range"] if isinstance(data["range"], list) else [data["range"]]
+        for r in values:
+            if r.upper() not in accepted:
+                return f"Invalid range value: {r}. Must be one of: {', '.join(valid_ranges)}"
 
     return None
 
@@ -1018,22 +927,9 @@ async def download_handler(data: Dict[str, Any], request: Optional[web.Request] 
     """Handle download request - create and queue a download job."""
     from unshackle.core.api.download_manager import get_download_manager
 
+    require_fields(data, "service", "title_id")
     service_tag = data.get("service")
     title_id = data.get("title_id")
-
-    if not service_tag:
-        raise APIError(
-            APIErrorCode.INVALID_INPUT,
-            "Missing required parameter: service",
-            details={"missing_parameter": "service"},
-        )
-
-    if not title_id:
-        raise APIError(
-            APIErrorCode.INVALID_INPUT,
-            "Missing required parameter: title_id",
-            details={"missing_parameter": "title_id"},
-        )
 
     normalized_service = validate_service(service_tag, request)
     if not normalized_service:
@@ -1065,6 +961,16 @@ async def download_handler(data: Dict[str, Any], request: Optional[web.Request] 
                 APIErrorCode.FORBIDDEN,
                 "The requested CDM is not permitted for API downloads.",
                 details={"cdm": requested_cdm},
+            )
+
+    # A per-request `credential` (or `credentials` map) authenticates the job with client-supplied
+    # secrets instead of the server-side credentials. Gate it behind `serve.allow_job_credentials`
+    # (default off) so a default deployment stays locked to its own credentials; mirrors the CDM gate.
+    if data.get("credential") or data.get("credentials"):
+        if not (config.serve or {}).get("allow_job_credentials"):
+            raise APIError(
+                APIErrorCode.FORBIDDEN,
+                "Per-request credentials are not permitted for API downloads.",
             )
 
     try:
@@ -1453,7 +1359,6 @@ async def session_create_handler(data: Dict[str, Any], request: Optional[web.Req
                 session.auth_status = AuthStatus.FAILED
                 session.auth_error = str(e)
                 bridge.status = AuthStatus.FAILED
-                bridge.error = str(e)
 
         asyncio.create_task(_run_auth())
 
@@ -1698,31 +1603,12 @@ async def session_segments_handler(
             else:
                 track_info["cookies"] = {}
 
-            # Include manifest-specific data for segment resolution
+            # Include manifest-specific data for segment resolution. Round-trip through
+            # JSON so any non-serializable value becomes its str() (default=str).
             if hasattr(track, "data") and track.data:
-                track_data = {}
-                for key, val in track.data.items():
-                    if isinstance(val, dict):
-                        # Convert non-serializable values
-                        serializable = {}
-                        for k, v in val.items():
-                            try:
-                                import json
+                import json
 
-                                json.dumps(v)
-                                serializable[k] = v
-                            except (TypeError, ValueError):
-                                serializable[k] = str(v)
-                        track_data[key] = serializable
-                    else:
-                        try:
-                            import json
-
-                            json.dumps(val)
-                            track_data[key] = val
-                        except (TypeError, ValueError):
-                            track_data[key] = str(val)
-                track_info["data"] = track_data
+                track_info["data"] = json.loads(json.dumps(track.data, default=str))
             else:
                 track_info["data"] = {}
 
@@ -1742,15 +1628,10 @@ async def session_segments_handler(
         )
 
 
-class _CdmTypeStub:
-    """Lightweight CDM stub so ``is_playready_cdm()`` can detect CDM type.
-
-    Used on the server when the client sends ``cdm_type`` but the server
-    does not need a full CDM (e.g. for cache key / device selection only).
-    """
-
-    def __init__(self, cdm_type: str) -> None:
-        self.is_playready = cdm_type == "playready"
+def _cdm_type_stub(cdm_type: str) -> SimpleNamespace:
+    """Lightweight CDM stand-in so ``is_playready_cdm()`` (reads ``.is_playready``)
+    can detect the type without loading a full CDM."""
+    return SimpleNamespace(is_playready=cdm_type == "playready")
 
 
 def _resolve_server_cdm(service: str, profile: Optional[str], cdm_type: Optional[str]) -> Optional[Any]:
@@ -1766,7 +1647,7 @@ def _resolve_server_cdm(service: str, profile: Optional[str], cdm_type: Optional
     """
     from unshackle.core.config import config as app_config
 
-    cdm_name = app_config.cdm.get(service)
+    cdm_name = ci_get(app_config.cdm, service)
     if cdm_name:
         if isinstance(cdm_name, dict):
             lower_keys = {k.lower(): v for k, v in cdm_name.items()}
@@ -1778,16 +1659,16 @@ def _resolve_server_cdm(service: str, profile: Optional[str], cdm_type: Optional
         if cdm_name and isinstance(cdm_name, str):
             detected_type = _detect_cdm_type(cdm_name, app_config)
             if detected_type:
-                return _CdmTypeStub(detected_type)
+                return _cdm_type_stub(detected_type)
 
     if cdm_type:
-        return _CdmTypeStub(cdm_type)
+        return _cdm_type_stub(cdm_type)
     return None
 
 
 def _detect_cdm_type_for_service(service: str, app_config: Any) -> Optional[str]:
     """Detect the CDM type configured for a service in config.cdm."""
-    cdm_name = app_config.cdm.get(service)
+    cdm_name = ci_get(app_config.cdm, service)
     if not cdm_name:
         return None
     if isinstance(cdm_name, dict):
@@ -1937,13 +1818,13 @@ def _resolve_handler_proxy(data: Dict[str, Any], normalized_service: str) -> tup
             server_region = None
 
         if server_region and server_region == client_region.lower():
-            log.info(f"Server already in client region '{client_region}', no proxy needed")
+            log.info(f"Server already in client region '{sanitize_log(client_region)}', no proxy needed")
         else:
             try:
                 proxy_param = resolve_proxy(client_region, proxy_providers)
-                log.info(f"Using server proxy for client region '{client_region}'")
+                log.info(f"Using server proxy for client region '{sanitize_log(client_region)}'")
             except ValueError:
-                log.debug(f"No server proxy available for client region '{client_region}'")
+                log.debug(f"No server proxy available for client region '{sanitize_log(client_region)}'")
 
     return proxy_param, proxy_providers
 
@@ -2040,11 +1921,11 @@ def _resolve_device_name(user_config: dict, drm_type: str, service_tag: str = ""
     """
     from unshackle.core.config import config as app_config
 
-    cdm_name = app_config.cdm.get(service_tag) if service_tag else None
+    cdm_name = ci_get(app_config.cdm, service_tag) if service_tag else None
     if isinstance(cdm_name, dict):
         drm_key = {"widevine": "widevine", "playready": "playready"}.get(drm_type)
         lower_keys = {k.lower(): v for k, v in cdm_name.items()}
-        cdm_name = lower_keys.get(drm_key) or lower_keys.get("default") or app_config.cdm.get("default")
+        cdm_name = lower_keys.get(drm_key) or lower_keys.get("default") or ci_get(app_config.cdm, "default")
     if cdm_name and isinstance(cdm_name, str):
         return cdm_name
 
@@ -2062,9 +1943,10 @@ def _resolve_device_name(user_config: dict, drm_type: str, service_tag: str = ""
 def _load_server_vaults(service_name: str) -> Any:
     """Load server vaults from config.key_vaults."""
     from unshackle.core.config import config as app_config
+    from unshackle.core.services import Services
     from unshackle.core.vaults import Vaults
 
-    vaults = Vaults(service_name)
+    vaults = Vaults(Services.get_vault_tag(service_name))
     for vault_config in app_config.key_vaults:
         cfg = vault_config.copy()
         vault_type = cfg.pop("type", None)
@@ -2325,9 +2207,9 @@ async def session_license_handler(
                     if track_drm_type:
                         actual_drm_type = track_drm_type
             except SystemExit:
-                log.warning(f"Service exited while resolving keys for track {tid[:12]}, skipping")
+                log.warning(f"Service exited while resolving keys for track {sanitize_log(tid[:12])}, skipping")
             except (Exception, SystemExit) as e:
-                log.warning(f"Failed to resolve keys for track {tid[:12]}: {e}")
+                log.warning(f"Failed to resolve keys for track {sanitize_log(tid[:12])}: {e}")
 
         response: Dict[str, Any] = {"keys": all_keys}
         if actual_drm_type:
@@ -2373,7 +2255,7 @@ async def session_license_handler(
 
         if mode == "server_cdm":
             keys = _handle_single_server_cdm(service, title, track, pssh_b64, drm_type, request)
-            log.info(f"Server CDM resolved {len(keys)} key(s) for track {track_id[:12]}")
+            log.info(f"Server CDM resolved {len(keys)} key(s) for track {sanitize_log(track_id[:12])}")
             return web.json_response({"keys": keys})
 
         return _handle_proxy_license(service, title, track, challenge_b64, drm_type)
@@ -2383,7 +2265,7 @@ async def session_license_handler(
     except SystemExit:
         raise APIError(APIErrorCode.SERVICE_ERROR, "Service exited during license request")
     except (Exception, SystemExit) as e:
-        log.exception(f"Error proxying license for track {track_id}")
+        log.exception(f"Error proxying license for track {sanitize_log(track_id)}")
         debug_mode = request.app.get("debug_api", False) if request else False
         return handle_api_exception(
             e,

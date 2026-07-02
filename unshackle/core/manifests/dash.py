@@ -25,11 +25,12 @@ from requests import Session
 
 from unshackle.core.cdm.detect import is_playready_cdm
 from unshackle.core.constants import DOWNLOAD_CANCELLED, DOWNLOAD_LICENCE_ONLY, AnyTrack
-from unshackle.core.drm import DRM_T, PlayReady, Widevine
+from unshackle.core.drm import DRM_T, ClearKeyCENC, PlayReady, Widevine
 from unshackle.core.events import events
 from unshackle.core.session import RnetSession
 from unshackle.core.tracks import Audio, Subtitle, Tracks, Video
-from unshackle.core.utilities import get_debug_logger, is_close_match, try_ensure_utf8
+from unshackle.core.utilities import is_close_match, log_event, try_ensure_utf8
+from unshackle.core.utils.redact import safe_display_url
 from unshackle.core.utils.xml import load_xml
 
 
@@ -66,6 +67,13 @@ class DASH:
 
         if not res.ok:
             raise requests.ConnectionError("Failed to request the MPD document.", response=res)
+
+        log_event(
+            "manifest_dash_fetch",
+            level="DEBUG",
+            message=f"Fetched DASH manifest ({len(res.text)} bytes)",
+            context={"url": safe_display_url(url), "size": len(res.text)},
+        )
 
         return DASH.from_text(res.text, url)
 
@@ -248,6 +256,22 @@ class DASH:
             break
 
         tracks.manifest_url = self.url
+
+        log_event(
+            "manifest_dash_parse",
+            level="INFO",
+            message=(
+                f"Parsed DASH manifest: {len(tracks.videos)} video, "
+                f"{len(tracks.audio)} audio, {len(tracks.subtitles)} subtitle track(s)"
+            ),
+            context={
+                "videos": len(tracks.videos),
+                "audio": len(tracks.audio),
+                "subtitles": len(tracks.subtitles),
+                "ranges": sorted({str(v.range) for v in tracks.videos}),
+                "vcodecs": sorted({str(v.codec) for v in tracks.videos}),
+            },
+        )
         return tracks
 
     @staticmethod
@@ -444,22 +468,20 @@ class DASH:
             session=session,
         )
 
-        debug_logger = get_debug_logger()
-        if debug_logger:
-            debug_logger.log(
-                level="DEBUG",
-                operation="manifest_dash_download_start",
-                message="Starting DASH manifest download",
-                context={
-                    "track_id": getattr(track, "id", None),
-                    "track_type": track.__class__.__name__,
-                    "total_segments": len(segments),
-                    "has_drm": bool(track.drm),
-                    "drm_types": [drm.__class__.__name__ for drm in (track.drm or [])],
-                    "save_path": str(save_path),
-                    "has_init_data": bool(init_data),
-                },
-            )
+        log_event(
+            "manifest_dash_download_start",
+            level="DEBUG",
+            message="Starting DASH manifest download",
+            context={
+                "track_id": getattr(track, "id", None),
+                "track_type": track.__class__.__name__,
+                "total_segments": len(segments),
+                "has_drm": bool(track.drm),
+                "drm_types": [drm.__class__.__name__ for drm in (track.drm or [])],
+                "save_path": str(save_path),
+                "has_init_data": bool(init_data),
+            },
+        )
 
         for status_update in downloader(**downloader_args):
             file_downloaded = status_update.get("file_downloaded")
@@ -474,19 +496,18 @@ class DASH:
         # Verify output directory exists and contains files
         if not save_dir.exists():
             error_msg = f"Output directory does not exist: {save_dir}"
-            if debug_logger:
-                debug_logger.log(
-                    level="ERROR",
-                    operation="manifest_dash_download_output_missing",
-                    message=error_msg,
-                    context={
-                        "track_id": getattr(track, "id", None),
-                        "track_type": track.__class__.__name__,
-                        "save_dir": str(save_dir),
-                        "save_path": str(save_path),
-                        "downloader": "requests",
-                    },
-                )
+            log_event(
+                "manifest_dash_download_output_missing",
+                level="ERROR",
+                message=error_msg,
+                context={
+                    "track_id": getattr(track, "id", None),
+                    "track_type": track.__class__.__name__,
+                    "save_dir": str(save_dir),
+                    "save_path": str(save_path),
+                    "downloader": "requests",
+                },
+            )
             raise FileNotFoundError(error_msg)
 
         for control_file in save_dir.glob("*.!dev"):
@@ -494,39 +515,37 @@ class DASH:
 
         segments_to_merge = [x for x in sorted(save_dir.iterdir()) if x.is_file()]
 
-        if debug_logger:
-            debug_logger.log(
-                level="DEBUG",
-                operation="manifest_dash_download_complete",
-                message="DASH download complete, preparing to merge",
+        log_event(
+            "manifest_dash_download_complete",
+            level="DEBUG",
+            message="DASH download complete, preparing to merge",
+            context={
+                "track_id": getattr(track, "id", None),
+                "track_type": track.__class__.__name__,
+                "save_dir": str(save_dir),
+                "save_dir_exists": save_dir.exists(),
+                "segments_found": len(segments_to_merge),
+                "segment_files": [f.name for f in segments_to_merge[:10]],  # Limit to first 10
+                "downloader": "requests",
+            },
+        )
+
+        if not segments_to_merge:
+            error_msg = f"No segment files found in output directory: {save_dir}"
+            # List all contents of the directory for debugging
+            all_contents = list(save_dir.iterdir()) if save_dir.exists() else []
+            log_event(
+                "manifest_dash_download_no_segments",
+                level="ERROR",
+                message=error_msg,
                 context={
                     "track_id": getattr(track, "id", None),
                     "track_type": track.__class__.__name__,
                     "save_dir": str(save_dir),
-                    "save_dir_exists": save_dir.exists(),
-                    "segments_found": len(segments_to_merge),
-                    "segment_files": [f.name for f in segments_to_merge[:10]],  # Limit to first 10
+                    "directory_contents": [str(p) for p in all_contents],
                     "downloader": "requests",
                 },
             )
-
-        if not segments_to_merge:
-            error_msg = f"No segment files found in output directory: {save_dir}"
-            if debug_logger:
-                # List all contents of the directory for debugging
-                all_contents = list(save_dir.iterdir()) if save_dir.exists() else []
-                debug_logger.log(
-                    level="ERROR",
-                    operation="manifest_dash_download_no_segments",
-                    message=error_msg,
-                    context={
-                        "track_id": getattr(track, "id", None),
-                        "track_type": track.__class__.__name__,
-                        "save_dir": str(save_dir),
-                        "directory_contents": [str(p) for p in all_contents],
-                        "downloader": "requests",
-                    },
-                )
             raise FileNotFoundError(error_msg)
 
         with open(save_path, "wb") as f:
@@ -1027,6 +1046,54 @@ class DASH:
                         kid = None
 
                 drm.append(PlayReady(pssh=pr_pssh, kid=kid, pssh_b64=pr_pssh_b64))
+
+            elif urn == ClearKeyCENC.urn:
+                # W3C EME ClearKey (org.w3.clearkey) — match the scheme UUID alone,
+                # value="ClearKey1.0" is spec'd (DASH-IF CCP) but not required in the wild
+                kid_attr = protection.get("default_KID") or protection.get("{urn:mpeg:cenc:2013}default_KID")
+                kid = None
+                if kid_attr:
+                    try:
+                        kid = UUID(kid_attr)
+                    except ValueError:
+                        try:
+                            kid = UUID(bytes=base64.b64decode(kid_attr))
+                        except Exception:
+                            kid = None
+
+                if not kid:
+                    # DASH-IF puts default_KID on the sibling mp4protection element
+                    kid = next(
+                        (
+                            UUID(p.get("default_KID") or p.get("{urn:mpeg:cenc:2013}default_KID"))
+                            for p in protections
+                            if p.get("default_KID") or p.get("{urn:mpeg:cenc:2013}default_KID")
+                        ),
+                        None,
+                    )
+
+                if not kid or kid in PLACEHOLDER_KIDS:
+                    continue
+
+                # license URL appears under several namespaces/casings in the wild
+                laurl = next(
+                    (
+                        text.strip()
+                        for name in (
+                            "{https://dashif.org/CPS}Laurl",
+                            "{https://dashif.org/CPS}laurl",
+                            "{http://dashif.org/guidelines/clearKey}Laurl",
+                            "{http://dashif.org/guidelines/clearKey}laurl",
+                            "Laurl",
+                            "laurl",
+                        )
+                        for text in [protection.findtext(name)]
+                        if text and text.strip()
+                    ),
+                    None,
+                )
+
+                drm.append(ClearKeyCENC(kids=[kid], laurl=laurl))
 
         return drm
 

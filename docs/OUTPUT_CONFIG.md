@@ -32,15 +32,77 @@ filenames:
 
 ## output_template (dict)
 
-Configure custom output filename templates for movies, series, and songs.
-This is **required** in your `unshackle.yaml` — a warning is shown if not configured.
-
-Available variables: `{title}`, `{year}`, `{season}`, `{episode}`, `{season_episode}`, `{episode_name}`,
-`{quality}`, `{resolution}`, `{source}`, `{audio}`, `{audio_channels}`, `{audio_full}`,
-`{video}`, `{hdr}`, `{hfr}`, `{atmos}`, `{dual}`, `{multi}`, `{tag}`, `{edition}`, `{repack}`,
-`{lang_tag}`, `{track_number}`, `{artist}`, `{album}`, `{disc}`
+Configure custom output filename templates for movies, series, songs, and albums.
+This is **required** in your `unshackle.yaml` - a warning is shown if not configured.
 
 Add `?` suffix to make a variable conditional (omitted when empty): `{year?}`, `{hdr?}`, `{repack?}`
+
+### General variables
+
+| Variable | Meaning |
+|---|---|
+| `title` | Title of the movie, episode, or track |
+| `year` | Release year |
+| `source` | Service source tag (the uppercase service directory name) |
+| `tag` | Group/release tag configured via `tag:` |
+| `edition` | Edition label (e.g. `Extended`, `Theatrical`) |
+| `repack` | `REPACK` when the release is a repack, otherwise empty |
+| `lang_tag` | Language tag produced by `language_tags` rules (e.g. `NORDiC`) |
+
+### Series / episode variables
+
+| Variable | Meaning |
+|---|---|
+| `season` | Season number (e.g. `1`) |
+| `episode` | Episode number (e.g. `1`) |
+| `season_episode` | Combined season/episode (e.g. `S01E01`) |
+| `episode_name` | Episode title |
+| `date` | Air date in ISO form (e.g. `2024-06-30`), only for daily/sports content |
+
+!!! note "Daily / sports content"
+    When a service supplies an air date (daily talk shows, news, sports events),
+    `{season_episode}` automatically renders the date using your template's separator
+    (e.g. `2024.06.30` for a dotted template, `2024 06 30` for a spaced one). The
+    standalone `{year}` is dropped from the filename — the air date is the sole date —
+    so every episode of a show names consistently. Folders still keep the year (e.g.
+    `Show Name (2010)/2024/`). No template change is needed.
+
+    Use the `{date}` variable instead if you want a fixed `YYYY-MM-DD` form regardless
+    of separator. Folders for dated episodes group by air year (e.g. `Show Name/2024/`).
+
+### Video / audio variables
+
+| Variable | Meaning |
+|---|---|
+| `quality` | Resolution label (e.g. `1080p`, `2160p`) |
+| `resolution` | Raw resolution string |
+| `video` | Video codec label (e.g. `H.264`, `H.265`) |
+| `hdr` | HDR format label (e.g. `HDR`, `DV`) |
+| `hfr` | HFR label when frame rate exceeds normal threshold |
+| `audio` | Audio codec label (e.g. `AAC`, `EAC3`) |
+| `audio_channels` | Channel count (e.g. `2.0`, `5.1`) |
+| `audio_full` | Combined codec + channels (e.g. `DDP5.1`) |
+| `atmos` | `Atmos` when Dolby Atmos is present, otherwise empty |
+| `dual` | `DUAL` when two audio languages are present, otherwise empty |
+| `multi` | `MULTi` when three or more audio languages are present, otherwise empty |
+
+### Music variables
+
+| Variable | Meaning |
+|---|---|
+| `track_number` | Track number within album |
+| `disc` | Disc number |
+| `track_total` | Total tracks on disc |
+| `disc_total` | Total discs in release |
+| `artist` | Track artist |
+| `album_artist` | Album-level artist (may differ from track artist) |
+| `album` | Album title |
+| `release_type` | Release type (e.g. `Album`, `Single`, `EP`) |
+| `genre` | Genre string |
+| `explicit` | `Explicit` when track has explicit content flag, otherwise empty |
+| `isrc` | International Standard Recording Code |
+| `upc` | Universal Product Code (album barcode) |
+| `label` | Record label name |
 
 ```yaml
 output_template:
@@ -71,7 +133,18 @@ If not configured, the default folder naming is used:
 - Songs: `Artist - Album (Year)`
 
 `folder` accepts either a single string (applies to all title kinds) or a mapping with per-kind
-templates keyed by `movies`, `series`, and/or `songs`. Unknown keys are warned about and ignored.
+templates keyed by `movies`, `series`, `songs`, and/or `albums`. Unknown keys are warned about and ignored.
+
+Use `/` in a folder template to create nested directories - each segment is sanitized
+independently and joined as real path separators. For example `'{source}/Series/{title}.{year?}'`
+produces `EXAMPLE/Series/The.Show.2024/`. Note `{source}` is the service **tag** (e.g. `EXAMPLE`,
+`EXAMPLE2`), not the display name; it is blank when `--no-source` is used.
+
+Movies only get their own folder when a `movies` folder template is set; without one the movie file
+is written directly into the downloads directory (unchanged default behaviour). Series and songs
+always get a folder unless `--no-folder` is passed.
+
+Useful music variables for album folders: `album_artist`, `album`, `artist`, `year`, `genre`, `label`, `release_type`, `track_total`, `disc_total`.
 
 ```yaml
 output_template:
@@ -90,11 +163,19 @@ output_template:
   #   movies: '{title} ({year})'
   #   series: '{title} ({year?})'
   #   songs: '{artist} - {album} ({year?})'
+  #   albums: '{album_artist} - {album} ({year?})'
+
+  # Nested per-service layout (EXAMPLE/Series/Title.Year/...)
+  # folder:
+  #   series: '{source}/Series/{title}.{year?}'
+  #   movies: '{source}/Movies/{title}.{year?}'
+  #   songs:  '{source}/Music/{album_artist}/{album}.{year?}'
 ```
 
 Example outputs:
 - Scene folder: `Example.Show.2024.S01.1080p.EXAMPLE.WEB-DL.DDP5.1.H.264-TAG/`
 - Plex folder: `Example Show (2024)/`
+- Nested folder: `EXAMPLE/Series/Example.Show.2024/`
 
 ---
 
@@ -204,11 +285,28 @@ Enable/disable tagging downloaded files with IMDB/TMDB/TVDB identifiers (when av
   Note: The `--split-audio` CLI flag overrides this setting. When `--split-audio` is passed,
   `merge_audio` is effectively set to `false` for that run.
 
+- `merge_video`
+  Merge video **language variants** into one file. Default: `false`
+  - `false`: One MKV per video track (the default behaviour).
+  - `true`: Group the selected video tracks by `(resolution, range, codec)` and merge
+    each group into one MKV, so only language varies within a file. The player switches
+    between the language tracks. No re-encode, no concatenation.
+
+  Only the language dimension is collapsed. Different **resolutions**, **ranges**
+  (SDR/HDR10/HDR10+/DV/HYBRID) and **codecs** (H264/H265) always stay in separate files.
+  For example, `-r HYBRID,DV,HDR10,SDR --merge-video` produces one file per range (never a
+  single combined file), while a title offering English + French video of the same
+  resolution/range/codec produces one file containing both video tracks.
+
+  Note: The `--merge-video` CLI flag overrides this setting. Can be set per service under
+  `services.<TAG>.muxing.merge_video`. Change `group_videos_by_variant` in
+  `unshackle/commands/dl.py` to adjust the grouping.
+
 - `default_language` (dict)
   Override which track is flagged as the default in the muxed MKV, regardless
   of the title's original language. Useful when you always want your player to
   open on a specific language (e.g. always default to Polish audio even on
-  English originals). Only affects the MKV `--default-track` flag — track
+  English originals). Only affects the MKV `--default-track` flag - track
   selection (`-l`, `--alang`, etc.) is unchanged. All keys are optional; each
   track type falls back to its previous default rule when the configured
   language isn't present in the manifest.
@@ -273,6 +371,7 @@ The following directories are available and may be overridden,
 Notes:
 
 - `services` accepts either a single directory or a list of directories to search for service modules.
+  Entries may also be **git repo specs** to load service packs hosted in a repo (see below).
 
 For example,
 
@@ -283,5 +382,65 @@ directories:
 ```
 
 There are directories not listed that cannot be modified as they are crucial to the operation of unshackle.
+
+### Loading services from a git repo
+
+A `services` entry may be a git repo instead of a local path, letting you host service packs on
+GitHub or any git host (GitLab, Gitea, self-hosted). Local paths and repo specs can be mixed:
+
+```yaml
+directories:
+  services:
+    - https://github.com/you/your-services         # https repo (highest priority - listed first)
+    - git@gitlab.com:you/your-services.git         # ssh repo (private, via your git auth)
+    - you/your-services@main                        # owner/repo shorthand + optional @branch
+    - ~/my-local-services                          # local path (fallback - listed last)
+```
+
+How it works:
+
+- On first use the repo is cloned (shallow) to `<your-services-dir>/_repos/<repo-name>/` - the first
+  local `services` entry, or the bundled `unshackle/services` if you configured none. **Nothing is
+  written to the `cache` directory.**
+- After that, unshackle does **not** hit the network on every run. It re-pulls at most once every 24h,
+  or immediately when you run `unshackle util refresh-services`.
+- Requires `git` on your PATH. Private repos use your existing git credential helper - unshackle
+  stores no tokens. Git use is **read-only on the remote** - only `clone`, `fetch`, `pull`, and a
+  local `reset` are run; nothing is ever pushed.
+- **Local edits and refresh.** You can edit a clone under `_repos/` directly. The two refresh paths
+  treat your edits differently:
+  - *Automatic* (the 24h TTL during a normal `dl`/`search` run): if the clone has uncommitted
+    changes to tracked files or unpushed local commits, unshackle **refuses to refresh and exits**,
+    naming the clone, so a background pull never clobbers work in progress. Commit and push it
+    upstream (or revert), then it refreshes normally.
+  - *Manual* (`unshackle util refresh-services`): an explicit "get upstream's latest" - it
+    **hard-resets the clone to upstream, discarding local changes**. Run it only when you want to
+    throw away local edits.
+  - Untracked files (new service folders, `__pycache__`) never block the automatic path - a
+    fast-forward pull doesn't touch them.
+- The repo's **top level** must contain `<TAG>/__init__.py` service dirs (same layout as
+  `unshackle/services/`).
+- **Priority is list order.** The first source to define a tag is the one that loads; if a later
+  source (repo or local) has the same tag, that copy is treated as a duplicate and ignored. So list
+  the sources you trust most first - e.g. repos first and local last to make local a fallback, or
+  local first to let your local tweaks override a repo.
+- **What you see on load.** A one-line summary is logged each run, e.g.:
+
+  ```text
+  Loaded 103 services (36 duplicate(s) ignored)
+  ```
+
+  The full per-duplicate detail is logged only at debug verbosity (`unshackle -d ...`), one line per
+  duplicate, naming the path that loaded and the path that was ignored:
+
+  ```text
+  EXAMPLE: using <unshackle>/services/EXAMPLE/__init__.py, ignoring duplicate <unshackle>/services/_repos/your-repo/EXAMPLE/__init__.py
+  ```
+
+  Paths are shortened to `<unshackle>`/`<venv>`/`~` tokens; set `redact_paths: false` to show full
+  absolute paths (see [Debug Logging](DEBUG_LOGGING.md)).
+
+If `<your-services-dir>` is inside the installed package, a reinstall may remove the clones; they are
+simply re-cloned on next use. On read-only installs, point `services` at a writable path.
 
 ---

@@ -8,6 +8,19 @@ from typing import Any, Optional
 import yaml
 from appdirs import AppDirs
 
+from unshackle.core.service_repo import is_repo_spec
+from unshackle.core.utils.collections import ci_get
+
+
+def resolve_decryption(decryption_map: dict, default: str, service: str) -> str:
+    """Pick the decryption tool for a service (case-insensitive), falling back to default."""
+    return ci_get(decryption_map, service, default)
+
+
+def resolve_cdm_name(cdm: dict, service: str, override: Any = None) -> Any:
+    """Resolve a service's top-level CDM entry (case-insensitive), with default fallback."""
+    return override or ci_get(cdm, service) or ci_get(cdm, "default")
+
 
 class Config:
     class _Directories:
@@ -47,6 +60,7 @@ class Config:
         self.curl_impersonate: dict = kwargs.get("curl_impersonate") or {}
         self.remote_cdm: list[dict] = kwargs.get("remote_cdm") or []
         self.credentials: dict = kwargs.get("credentials") or {}
+        self.firefox_cookies: dict = kwargs.get("firefox_cookies") or {}
         self.subtitle: dict = kwargs.get("subtitle") or {}
 
         self.directories = self._Directories()
@@ -55,7 +69,8 @@ class Config:
                 # these must not be modified by the user
                 continue
             if name == "services" and isinstance(path, list):
-                setattr(self.directories, name, [Path(p).expanduser() for p in path])
+                # repo specs (git URLs / owner-repo) stay raw strings; resolved lazily in services.py
+                setattr(self.directories, name, [p if is_repo_spec(p) else Path(p).expanduser() for p in path])
             else:
                 setattr(self.directories, name, Path(path).expanduser())
 
@@ -74,6 +89,7 @@ class Config:
         self.audio: dict = kwargs.get("audio") or {}
         self.headers: dict = kwargs.get("headers") or {}
         self.key_vaults: list[dict[str, Any]] = kwargs.get("key_vaults", [])
+        self.vault_timeout: float = kwargs.get("vault_timeout", 10.0)
         self.muxing: dict = kwargs.get("muxing") or {}
         self.proxy_providers: dict = kwargs.get("proxy_providers") or {}
         self.remote_services: dict = kwargs.get("remote_services") or {}
@@ -97,6 +113,8 @@ class Config:
         self.ipinfo_api_key: str = kwargs.get("ipinfo_api_key") or ""
         self.update_checks: bool = kwargs.get("update_checks", True)
         self.update_check_interval: int = kwargs.get("update_check_interval", 24)
+        # mask local base dirs (install root/venv/home) in logged paths; False shows full paths
+        self.redact_paths: bool = kwargs.get("redact_paths", True)
 
         self.language_tags: dict = kwargs.get("language_tags") or {}
         self.output_template: dict = kwargs.get("output_template") or {}
@@ -126,6 +144,7 @@ class Config:
 
         self.debug: bool = kwargs.get("debug", False)
         self.debug_keys: bool = kwargs.get("debug_keys", False)
+        self.debug_requests: bool = kwargs.get("debug_requests", False)
 
     def _validate_output_templates(self) -> None:
         """Validate output template configurations and warn about potential issues."""
@@ -139,14 +158,24 @@ class Config:
             "episode",
             "season_episode",
             "episode_name",
+            "date",
             "quality",
             "resolution",
             "source",
             "tag",
             "track_number",
             "artist",
+            "album_artist",
             "album",
             "disc",
+            "track_total",
+            "disc_total",
+            "release_type",
+            "genre",
+            "explicit",
+            "isrc",
+            "upc",
+            "label",
             "audio",
             "audio_channels",
             "audio_full",
@@ -167,8 +196,8 @@ class Config:
         if self.folder_template:
             all_templates["folder"] = self.folder_template
         for kind, tmpl in self.folder_templates.items():
-            if kind not in {"movies", "series", "songs"}:
-                warnings.warn(f"Unknown folder template kind '{kind}' (expected movies/series/songs)")
+            if kind not in {"movies", "series", "songs", "albums"}:
+                warnings.warn(f"Unknown folder template kind '{kind}' (expected movies/series/songs/albums)")
                 continue
             all_templates[f"folder.{kind}"] = tmpl
 
@@ -185,7 +214,11 @@ class Config:
                     warnings.warn(f"Unknown template variable '{var}' in {template_type} template")
 
             test_template = re.sub(r"\{[^}]+\}", "TEST", template_str)
-            if re.search(unsafe_chars, test_template):
+            if template_type.startswith("folder"):
+                unsafe_segment = any(re.search(unsafe_chars, seg) for seg in re.split(r"[\\/]", test_template))
+            else:
+                unsafe_segment = bool(re.search(unsafe_chars, test_template))
+            if unsafe_segment:
                 warnings.warn(f"Template '{template_type}' may contain filesystem-unsafe characters")
 
             if not template_str.strip():
@@ -194,7 +227,7 @@ class Config:
     def get_folder_template(self, kind: str) -> str:
         """Resolve the folder template for the given title kind.
 
-        kind: one of "movies", "series", "songs".
+        kind: one of "movies", "series", "songs", "albums".
         Falls back to the legacy single-string folder template, then "".
         """
         if self.folder_templates:

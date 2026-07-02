@@ -60,7 +60,7 @@ def main(argv: list[str]) -> int:
                     log.error(f"Failed to write progress update: {e}")
 
         output_files = _perform_download(
-            job_id, service, title_id, params, cancel_event=None, progress_callback=progress_callback
+            job_id, service, title_id, params, progress_callback=progress_callback
         )
 
         result = {"status": "success", "output_files": output_files}
