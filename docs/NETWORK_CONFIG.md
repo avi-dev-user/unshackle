@@ -55,6 +55,88 @@ You can even set a specific server number this way, e.g., `--proxy nordvpn:gb236
 
 Note that `gb` is used instead of `uk` to be more consistent across regional systems.
 
+### protonvpn (dict)
+
+Enable Proton VPN as a proxy provider. Proton mints short-lived HTTPS proxy credentials per session, so
+authentication reuses a Proton account session (obtained via TV login or an exported browser session) rather than
+static credentials. **Free Proton accounts work**, limited to the free-tier exit countries.
+
+There are two ways to obtain that session — TV login or cookie export. You only need one. They can also coexist: a
+cached or cookie session is always tried first, and TV login is only used as a fallback when no session is present.
+
+#### TV login (self-sustaining, recommended)
+
+Set `enable: true` and run any command that uses the proxy. On first use, when no session is cached, unshackle
+prints a code and pauses:
+
+1. Open `https://account.proton.me/vpn/tv/code` in a browser where you are signed in to Proton.
+2. Enter the code shown in the terminal and approve it.
+3. Return to the terminal and **press Enter** to continue.
+
+The minted refresh token is cached at `<cache>/vpn/protonvpn.json` and **refreshes on its own forever after**, so
+this is genuinely a one-time step — later runs load straight from the cache without prompting. The prompt is **off
+by default** (`enable: false`) so nobody is prompted unexpectedly, and it is skipped automatically when there is no
+interactive terminal (e.g. under `serve`, cron, or piped input) — in those contexts, use a cookie export or run an
+interactive command once to seed the cache first.
+
+#### Cookie export (easiest to collect, but lapses)
+
+Export the cookies for `account.proton.me` **or** `account.protonvpn.com` (Netscape `cookies.txt` or a JSON cookie
+list) and save them at `<cookies>/vpn/protonvpn.txt`. The provider auto-loads when that file exists (no YAML
+required); cookies for other Proton apps (e.g. `mail.proton.me`) are ignored automatically.
+
+- The export **must include the `AUTH-<UID>` cookie**. It is **HttpOnly** — many one-click cookie-export
+  extensions skip HttpOnly cookies by default, which is the most common reason an export "doesn't work". Use an
+  exporter that includes them.
+- A browser session **cannot be refreshed headlessly** — Proton rotates browser refresh tokens and ties them to
+  the live browser. unshackle therefore uses the cookie's access token only (it never tries to refresh it) and the
+  session works until that token expires (Proton's TTL, typically ~24h); after that you must re-export. For a
+  set-and-forget setup, prefer TV login.
+- Cookies are read fresh from the file on every run and are **never written to the cache**. If a TV-login cache
+  also exists, it is preferred unless the cookie file is newer — so to force the cookie session, just re-save
+  (re-export) the cookie file.
+
+#### Resetting
+
+To start clean, delete both `<cookies>/vpn/protonvpn.txt` and `<cache>/vpn/protonvpn.json`.
+
+#### Troubleshooting
+
+- **`Proton: no session available …`** — no cookies and no cache were found. Either export cookies, or set
+  `enable: true` and run from an interactive terminal (the prompt is skipped on non-tty stdin).
+- **`Proton: session expired; re-export … cookies`** — a cookie session's access token lapsed and cannot be
+  refreshed (expected for cookie auth). Re-export the cookies, or switch to TV login.
+
+#### Configuration
+
+Configuration is optional — only add a block to enable TV login or override defaults:
+
+```yaml
+proxy_providers:
+  protonvpn:
+    enable: true  # prompt the one-time TV login when no session is cached (default false)
+    cookie_path: /path/to/protonvpn.txt  # optional; defaults to <cookies>/vpn/protonvpn.txt
+    cache_path: /path/to/protonvpn.json  # optional; defaults to <cache>/vpn/protonvpn.json
+    timeout: 10  # optional; per-request timeout in seconds (default 10)
+    server_map:
+      stream-us: us:ny  # optional alias -> country / country:city / countryNN
+```
+
+Query formats (after the provider prefix). City uses the NordVPN-style colon, like `nordvpn:us:seattle`:
+
+- `--proxy protonvpn:us` — random server in the country (the chosen server name is logged)
+- `--proxy protonvpn:us:ny` / `protonvpn:ca:vancouver` — by city (name or initials)
+- `--proxy protonvpn:de203` — pin Proton server **#203** (the number shown in the log, e.g. `DE#203`)
+
+Use `uk` (Proton's code for the United Kingdom); `gb` is accepted and mapped to `uk` automatically. Proton's
+server numbers are not sequential (a country may have `#203`, `#813`, …), so pick the number from a previous
+run's log line rather than guessing.
+
+Selection only offers servers your plan can use (paid accounts are detected automatically) and **prefers paid
+servers over the free pool**, falling back to free only when no paid server is available — a pinned `#NN` always
+wins. **Tor and Secure Core servers are excluded** (both are slow for a plain proxy). Secure Core servers use
+port 443, all others 4443 — handled automatically.
+
 ### surfsharkvpn (dict)
 
 Enable Surfshark VPN proxy service using Surfshark Service credentials (not your login password).

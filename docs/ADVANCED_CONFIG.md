@@ -159,11 +159,25 @@ debug_keys: true
 
 ---
 
+## debug_requests (bool)
+
+Controls whether HTTP-library logs are shown during `--debug` sessions. Default: `false`
+
+When `--debug` is active and this is `false`, unshackle silences the noisy per-request logs emitted by `urllib3`, `requests`, `rnet`, `httpx`, and related libraries (e.g. `GET ...seg-001.m4s 200`) so that unshackle's own structured DEBUG output stays readable. Set to `true` to see every individual HTTP request, including per-segment downloads.
+
+Has no effect when `--debug` is not active.
+
+```yaml
+debug_requests: true
+```
+
+---
+
 ## set_terminal_bg (bool)
 
-Controls whether unshackle should set the terminal background color. Default: `false`
+Controls whether unshackle applies its theme background color to the terminal. Default: `false`
 
-For example,
+When enabled, the Rich console theme's background color is appended to the foreground styles for both the general color scheme and the ASCII art banner, so the full color palette renders correctly on terminals whose default background differs from the theme. Set to `true` if the banner or colored output looks off on your terminal.
 
 ```yaml
 set_terminal_bg: true

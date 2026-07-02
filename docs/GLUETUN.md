@@ -65,7 +65,8 @@ Format: `gluetun:provider:region`
 3. Generate or view your service credentials
 4. Copy the username and password
 
-> **Note**: Use service credentials, NOT your account email/password.
+!!! note
+    Use service credentials, NOT your account email/password.
 
 ### WireGuard Credentials (Advanced)
 
@@ -241,3 +242,81 @@ Common issues:
 
 - [Gluetun Wiki](https://github.com/qdm12/gluetun-wiki) - Official provider documentation
 - [Gluetun GitHub](https://github.com/qdm12/gluetun)
+
+---
+
+## ExpressVPN HTTPS Proxy
+
+ExpressVPN is a standalone HTTPS proxy provider — it does **not** use Docker or the gluetun sub-provider system. It authenticates via a browser-extension OAuth flow (Keycloak/PKCE) and returns an authenticated `https://cat:<token>@<host>:443` proxy URL.
+
+### Prerequisites
+
+An active ExpressVPN subscription is required. The provider resolves proxy-capable locations through ExpressVPN's own API, so no local VPN client or Docker container is needed.
+
+### Authentication
+
+The provider uses a token cascade (tried in order):
+
+1. **Cached tokens** — `cache/global/expressvpn_tokens.json` (auto-written after first auth; access and refresh tokens are refreshed automatically when they expire).
+2. **Exported browser cookies** — `cookies/vpn/expressvpn.txt` (also accepted at `cookies/vpns/expressvpn.txt`). Must contain the `KEYCLOAK_IDENTITY` and `KEYCLOAK_SESSION` cookies from `auth.expressvpn.com`. Used for a one-time PKCE bootstrap that populates the token cache.
+3. **Desktop `account.json`** — configured via the `account_json` key (see below).
+
+Export cookies from a browser that is logged in to `auth.expressvpn.com`. Any Netscape-format, JSON array, or `name=value` file is accepted.
+
+### Configuration
+
+Add to `~/.config/unshackle/unshackle.yaml` under `proxy_providers`:
+
+```yaml
+proxy_providers:
+  expressvpn:
+    region_map:
+      us: "ny"        # --proxy expressvpn:us  →  New York (default city)
+      gb: "london"    # --proxy expressvpn:gb  →  London
+      de: "frankfurt" # --proxy expressvpn:de  →  Frankfurt
+      es: "madrid"    # --proxy expressvpn:es  →  Madrid
+      mx:             # --proxy expressvpn:mx  →  smart/random MX location
+```
+
+`region_map` maps a country code to a default city preset. An empty (null) value enables smart connection (a random location in that country). The preset is only applied when the CLI query contains no city; an explicit city in the query always takes precedence.
+
+#### Optional keys
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `region_map` | `{}` | Country → default city presets (see above) |
+| `server_map` | `{}` | Alias → ExpressVPN location slug or direct hostname |
+| `cookie_path` | `cookies/vpn/expressvpn.txt` | Path to exported browser cookies |
+| `cache_path` | `cache/global/expressvpn_tokens.json` | Token cache location |
+| `account_json` | *(none)* | Path to ExpressVPN desktop `account.json` |
+| `refresh_token` | *(none)* | OAuth refresh token (manual override) |
+| `timeout` | `10.0` | HTTP request timeout in seconds |
+
+### Usage
+
+```bash
+unshackle dl SERVICE CONTENT --proxy expressvpn:us        # random/smart US location
+unshackle dl SERVICE CONTENT --proxy expressvpn:us-ny     # specific city (New York)
+unshackle dl SERVICE CONTENT --proxy expressvpn:us-ny-2   # pinned server #2 in New York
+unshackle dl SERVICE CONTENT --proxy expressvpn:mx        # random/smart Mexico location
+unshackle dl SERVICE CONTENT --proxy expressvpn:es-madrid # specific city (Madrid)
+```
+
+Query format: `expressvpn:<country>[-<city>[-<N>]]`
+
+- `country` — 2-letter country code (e.g. `us`, `gb`, `de`).
+- `city` — optional city abbreviation or slug matched against location names using first-letter abbreviation (`ny` → "New York"), exact slug, prefix, then substring strategies.
+- `N` — optional 1-based server index (e.g. `-2` selects the second server in the matched city). If `N` exceeds the available server count, a random server is selected.
+
+### City matching
+
+The city part of the query is matched against ExpressVPN location names using these strategies (in priority order):
+
+1. First-letter abbreviation — `ny` matches "New York"
+2. Exact slug — `miami` matches "Miami"
+3. Prefix match — `mia` matches "Miami"
+4. Substring match — `york` matches "New York"
+
+### Token cache
+
+After the first successful authentication the token cache is written to `cache/global/expressvpn_tokens.json` (mode 0600). Subsequent runs refresh expired access/SRT/connection tokens automatically without re-reading cookies.

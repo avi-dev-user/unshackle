@@ -96,6 +96,7 @@ def check() -> None:
         },
         {"name": "Caddy", "binary": binaries.Caddy, "required": False, "desc": "Web server", "cat": "Network"},
         {"name": "Docker", "binary": binaries.Docker, "required": False, "desc": "Gluetun VPN", "cat": "Network"},
+        {"name": "git", "binary": binaries.Git, "required": False, "desc": "Service repos", "cat": "Network"},
     ]
 
     # Track overall status
@@ -185,7 +186,7 @@ def info() -> None:
         # Handle both single Path objects and lists of Path objects
         if isinstance(attr_value, list):
             # For lists, show each path on a separate line
-            paths_str = "\n".join(str(path.resolve()) for path in attr_value)
+            paths_str = "\n".join(str(p.resolve()) if isinstance(p, Path) else str(p) for p in attr_value)
             table.add_row(name.title(), paths_str)
         else:
             # For single Path objects, use the original logic
