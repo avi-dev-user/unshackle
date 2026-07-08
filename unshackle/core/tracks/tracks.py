@@ -697,7 +697,11 @@ class Tracks:
             errors = []
             warnings = []
             mux_start_time = time.monotonic()
-            p = subprocess.Popen(full_command, text=True, stdout=subprocess.PIPE)
+            # errors="replace": mkvmerge's stdout is only scanned for #GUI# markers and a
+            # progress percentage, never stored - an encoding hiccup in unrelated status text
+            # (e.g. a title with non-ASCII characters) shouldn't crash a mux that already
+            # succeeded in every way that matters.
+            p = subprocess.Popen(full_command, text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE)
             for line in iter(p.stdout.readline, ""):
                 if line.startswith("#GUI#error") or line.startswith("#GUI#warning"):
                     errors.append(line)
