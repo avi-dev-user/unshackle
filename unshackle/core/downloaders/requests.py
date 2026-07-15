@@ -344,8 +344,13 @@ def download(
                     expected = part_end - part_offset + 1
                     if written < expected:
                         raise IOError(f"Failed to read part {part_offset}-{part_end}: got {written}/{expected}")
-                elif not segmented and content_length and written < content_length:
-                    raise IOError(f"Failed to read {content_length} bytes from the track URI.")
+                elif content_length and written < content_length:
+                    # A short read (connection dropped mid-body after a 200) must be treated
+                    # as a failure for segments too, not just whole files - otherwise a
+                    # truncated HLS segment is silently accepted and the muxed video comes
+                    # out short. Guarded by a known Content-Length, so chunked/unknown-length
+                    # responses are unaffected. Raising here routes into the retry below.
+                    raise IOError(f"Failed to read {content_length} bytes from the track URI (got {written}).")
 
                 if not part_mode:
                     yield dict(file_downloaded=save_path, written=resume_offset + written)
@@ -358,8 +363,15 @@ def download(
                     stream.close()
                 except Exception:
                     pass
-                if DOWNLOAD_CANCELLED.is_set() or attempts == MAX_ATTEMPTS:
-                    if part_mode and not DOWNLOAD_CANCELLED.is_set():
+                if DOWNLOAD_CANCELLED.is_set():
+                    return
+                if attempts == MAX_ATTEMPTS:
+                    # A part or an HLS segment that never completed is fatal: a missing
+                    # segment silently truncates the muxed video (exits 0 with a short file).
+                    # Raise so the batch aborts loudly instead of delivering a partial title.
+                    # A non-segmented single track keeps the old lenient return, so an
+                    # optional track (e.g. a 404 subtitle) can still be skipped by callers.
+                    if part_mode or segmented:
                         raise
                     return
                 if not part_mode and save_path.exists():
