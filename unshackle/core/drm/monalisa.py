@@ -247,6 +247,8 @@ class MonaLisa:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",  # worker may echo a non-UTF-8 filename; don't crash the decrypt
                 startupinfo=startupinfo,
                 timeout=worker_timeout_s,
             )
