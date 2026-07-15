@@ -12,6 +12,7 @@ from sortedcontainers import SortedKeyList
 from unshackle.core.config import config
 from unshackle.core.titles.title import Title
 from unshackle.core.utilities import sanitize_filename
+from unshackle.core.utils.english_title import resolve_english_title
 from unshackle.core.utils.template_formatter import TemplateFormatter
 
 
@@ -93,12 +94,17 @@ class Episode(Title):
     def _build_template_context(self, media_info: MediaInfo, show_service: bool = True) -> dict:
         """Build template context dictionary from MediaInfo."""
         context = self._build_base_template_context(media_info, show_service)
-        context["title"] = self.title.replace("$", "S")
+        # Prefer TMDB's English series title for a scene-style name; keeps the original
+        # (e.g. Hebrew) when there's no key / no confident match. When we do swap to English,
+        # drop the original-language episode name so the filename doesn't come out half-and-half.
+        english = resolve_english_title(self.title, self.year, "tv")
+        title = english or self.title
+        context["title"] = title.replace("$", "S")
         context["year"] = self.year or ""
         context["season"] = f"S{self.season:02}"
         context["episode"] = f"E{self.number:02}"
         context["season_episode"] = f"S{self.season:02}E{self.number:02}"
-        context["episode_name"] = self.name or ""
+        context["episode_name"] = "" if english else (self.name or "")
         context["date"] = ""
         if self.air_date:
             # daily/sports: air date replaces SxxExx

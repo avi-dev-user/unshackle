@@ -10,6 +10,7 @@ from sortedcontainers import SortedKeyList
 from unshackle.core.config import config
 from unshackle.core.titles.title import Title
 from unshackle.core.utilities import sanitize_filename
+from unshackle.core.utils.english_title import resolve_english_title
 from unshackle.core.utils.template_formatter import TemplateFormatter
 
 
@@ -49,7 +50,9 @@ class Movie(Title):
     def _build_template_context(self, media_info: MediaInfo, show_service: bool = True) -> dict:
         """Build template context dictionary from MediaInfo."""
         context = self._build_base_template_context(media_info, show_service)
-        context["title"] = self.name.replace("$", "S")
+        # Prefer TMDB's English title for a scene-style name; keep the original otherwise.
+        name = resolve_english_title(self.name, self.year, "movie") or self.name
+        context["title"] = name.replace("$", "S")
         context["year"] = self.year or ""
         return context
 
