@@ -55,9 +55,16 @@ class MetadataProvider(metaclass=ABCMeta):
         if self._session is None:
             self._session = requests.Session()
             self._session.headers.update(HEADERS)
+            # Metadata enrichment is best-effort: a connection/DNS failure (e.g. the
+            # provider host can't be resolved) should fail fast and let the caller skip
+            # enrichment, not stall the whole download behind retry backoff. Only genuine
+            # transient server responses (429/5xx) are worth retrying.
             retry = Retry(
-                total=3,
-                backoff_factor=1,
+                total=2,
+                connect=0,
+                read=0,
+                status=2,
+                backoff_factor=0.5,
                 status_forcelist=[429, 500, 502, 503, 504],
                 allowed_methods=["GET", "POST"],
             )

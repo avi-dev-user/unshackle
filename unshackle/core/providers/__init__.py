@@ -12,8 +12,10 @@ from unshackle.core.providers.tmdb import TMDBProvider
 if TYPE_CHECKING:
     from unshackle.core.title_cacher import TitleCacher
 
-# Ordered by priority: IMDBApi (free), SIMKL, TMDB
-ALL_PROVIDERS: list[type[MetadataProvider]] = [IMDBApiProvider, SimklProvider, TMDBProvider]
+# Ordered by priority: TMDB (keyed, reliable) first, then SIMKL, with the keyless
+# IMDBApi last as a best-effort fallback. IMDBApi is preferred by nobody while its
+# host (api.imdbapi.dev) resolves to nothing, so it must not gate the happy path.
+ALL_PROVIDERS: list[type[MetadataProvider]] = [TMDBProvider, SimklProvider, IMDBApiProvider]
 
 
 def get_available_providers() -> list[MetadataProvider]:
