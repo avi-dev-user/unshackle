@@ -179,6 +179,27 @@ def download_tracks_in_passes(
         DOWNLOAD_CANCELLED.clear()  # never leave a failed track's cancel set for later code
 
 
+def apply_title_name_override(titles: Title_T, name: str) -> None:
+    """Force `name` as the display name of the fetched title(s) for the output filename.
+
+    For a series/season the show title is the Episode's `title`; for movies it is `name`.
+    Music is left untouched (its naming is track-based). Used by the --title-name override so a
+    caller that already knows the name (e.g. the bot, from search) gets a correct filename even
+    when the service can't resolve the name by id."""
+    if not name:
+        return
+    if isinstance(titles, (Series, Movies)):
+        for t in titles:
+            if isinstance(t, Episode):
+                t.title = name
+            else:
+                t.name = name
+    elif isinstance(titles, Episode):
+        titles.title = name
+    elif not isinstance(titles, Music):
+        titles.name = name
+
+
 class dl:
     @staticmethod
     def truncate_pssh_for_display(pssh_string: str, drm_type: str) -> str:
@@ -539,6 +560,13 @@ class dl:
     )
     @click.option("--repack", is_flag=True, default=False, help="Add REPACK tag to the output filename.")
     @click.option(
+        "--title-name",
+        type=str,
+        default=None,
+        help="Override the title's display name for the output filename. Use when the caller "
+        "already knows the name (e.g. from search) and the service can't resolve it by id.",
+    )
+    @click.option(
         "-rvb",
         "--real-video-bitrate",
         is_flag=True,
@@ -721,6 +749,7 @@ class dl:
         proxy: Optional[str] = None,
         repack: bool = False,
         tag: Optional[str] = None,
+        title_name: Optional[str] = None,
         tmdb_id: Optional[int] = None,
         imdb_id: Optional[str] = None,
         animeapi_id: Optional[str] = None,
@@ -767,6 +796,7 @@ class dl:
 
         self.profile = profile
         self.proxy_requested = bool(proxy)
+        self.title_name = title_name
         self.tmdb_id = tmdb_id
         self.imdb_id = imdb_id
         self.enrich = enrich
@@ -1423,6 +1453,13 @@ class dl:
                             titles.name = enrich_title
                     if enrich_year and not titles.year:
                         titles.year = enrich_year
+
+        # An explicit --title-name (e.g. the caller already knows the name from search, and the
+        # service can't resolve it by id) has the final say on the display name for the output
+        # filename. It overrides both the service's fetched/fallback name and any id-enrichment,
+        # since it is what the user actually selected. Playback is unaffected (keyed by id).
+        if self.title_name:
+            apply_title_name_override(titles, self.title_name)
 
         music_mode = isinstance(titles, Music)
         music_collection_mode = (
