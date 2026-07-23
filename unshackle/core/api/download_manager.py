@@ -299,6 +299,7 @@ def _perform_download(
         "profile": params.get("profile"),
         "repack": params.get("repack", False),
         "tag": params.get("tag"),
+        "title_name": params.get("title_name"),
         "tmdb_id": params.get("tmdb_id"),
         "imdb_id": params.get("imdb_id"),
         "animeapi_id": params.get("animeapi_id"),
